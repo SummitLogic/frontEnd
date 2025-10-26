@@ -1,103 +1,167 @@
 # Deployment Guide for GateFlow Dashboard
 
+> **Note:** This project has been restructured. All deployment files are now in the `deploy/` folder.  
+> For detailed deployment instructions, see **[deploy/README.md](deploy/README.md)**
+
+## Quick Overview
+
+### Project Structure
+```
+frontEnd/
+├── gategroupDashboard.py       # Main application
+├── Dockerfile                  # Container definition
+├── data/                       # User data (not in git)
+└── deploy/                     # 🔥 All deployment configs here
+    ├── README.md              # Detailed deployment guide
+    ├── quick-deploy.sh        # Automated deployment script
+    ├── docker-compose.yml     # Development setup
+    ├── docker-compose.prod.yml # Production with nginx
+    ├── .env.example           # Configuration template
+    └── nginx/
+        └── nginx.conf         # Reverse proxy configuration
+```
+
+### Deployment Options
+
+1. **Docker + VPS (Recommended)**
+   - See [`deploy/README.md`](deploy/README.md)
+   - Full control, custom domain, SSL
+   - Cost: ~$5-20/month
+
+2. **Streamlit Community Cloud (Easiest)**
+   - See [`STREAMLIT_CLOUD_DEPLOYMENT.md`](STREAMLIT_CLOUD_DEPLOYMENT.md)
+   - Free tier available
+   - Limited customization
+
+3. **Quick Deploy Script**
+   ```bash
+   cd deploy
+   ./quick-deploy.sh
+   ```
+
 ## Prerequisites
+
+For VPS deployment you need:
 - A VPS/Cloud Server (DigitalOcean, AWS EC2, Linode, etc.)
-- Your domain pointing to the server's IP address
-- SSH access to your server
+- Domain name (optional but recommended)
+- SSH access to server
 
-## Deployment Steps
+## Quick Start
 
-### 1. Point Your Domain to Server
-Update your domain's DNS A record to point to your server's IP address:
-```
-Type: A
-Name: @ (or your subdomain)
-Value: YOUR_SERVER_IP
-TTL: 3600
-```
-
-### 2. Server Setup (Ubuntu/Debian)
-
-SSH into your server and run these commands:
-
+### Local Testing
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# Install Docker Compose
-sudo apt install docker-compose -y
-
-# Install Nginx
-sudo apt install nginx -y
-
-# Install Certbot for SSL
-sudo apt install certbot python3-certbot-nginx -y
-```
-
-### 3. Deploy the Application
-
-```bash
-# Clone or upload your project to the server
-cd /home/youruser/
-git clone YOUR_REPO_URL frontEnd
-# OR use scp/rsync to upload files
-
+# Clone the repository
+git clone https://github.com/SummitLogic/frontEnd.git
 cd frontEnd
 
 # Build and run with Docker
-docker-compose up -d --build
-
-# Check if it's running
-docker-compose logs -f
+cd deploy
+docker compose up --build
 ```
 
-### 4. Configure Nginx
+Access at: http://localhost:8501
+
+### Production Deployment
+
+**Step 1: Point your domain to server**
+```
+DNS A Record:
+Type: A
+Name: @
+Value: YOUR_SERVER_IP
+```
+
+**Step 2: Set up server**
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Clone project
+git clone https://github.com/SummitLogic/frontEnd.git
+cd frontEnd/deploy
+```
+
+**Step 3: Deploy**
+```bash
+# Development mode
+docker compose up -d --build
+
+# OR Production mode (with nginx)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+**Step 4: Set up SSL**
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d your-domain.com
+```
+
+## Detailed Guides
+
+- **Full Deployment Guide:** [`deploy/README.md`](deploy/README.md)
+- **Streamlit Cloud:** [`STREAMLIT_CLOUD_DEPLOYMENT.md`](STREAMLIT_CLOUD_DEPLOYMENT.md)
+- **Quick Deploy:** [`QUICK_DEPLOY.md`](QUICK_DEPLOY.md)
+
+## Maintenance
 
 ```bash
-# Copy nginx configuration
-sudo cp nginx.conf /etc/nginx/sites-available/gateflow
+# View logs
+docker compose logs -f
 
-# Update the domain name in the config
-sudo nano /etc/nginx/sites-available/gateflow
-# Replace 'your-domain.com' with your actual domain
+# Restart
+docker compose restart
 
-# Enable the site
-sudo ln -s /etc/nginx/sites-available/gateflow /etc/nginx/sites-enabled/
+# Update and rebuild
+git pull
+docker compose up -d --build
 
-# Remove default site
-sudo rm /etc/nginx/sites-enabled/default
-
-# Test nginx configuration
-sudo nginx -t
-
-# Restart nginx
-sudo systemctl restart nginx
+# Stop services
+docker compose down
 ```
 
-### 5. Setup SSL Certificate (HTTPS)
+## Troubleshooting
 
+**Container won't start:**
 ```bash
-# Get SSL certificate from Let's Encrypt
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
-
-# Certbot will automatically configure HTTPS
-# Follow the prompts and select redirect HTTP to HTTPS
+docker compose logs
+docker ps -a
 ```
 
-### 6. Update Streamlit Configuration
-
-Edit `.streamlit/config.toml` and update `serverAddress`:
-```toml
-[browser]
-serverAddress = "your-actual-domain.com"
+**Port already in use:**
+```bash
+# Check what's using port 8501
+sudo lsof -i :8501
+# Kill the process or change port in docker-compose.yml
 ```
 
-Then rebuild:
+**Domain not working:**
+```bash
+# Check DNS propagation
+nslookup your-domain.com
+# Verify nginx is running
+sudo systemctl status nginx
+```
+
+## Security Checklist
+
+- [ ] Change default user credentials
+- [ ] Enable firewall (ports 80, 443, 22)
+- [ ] Set up SSL/HTTPS
+- [ ] Keep dependencies updated
+- [ ] Back up `data/users.json`
+- [ ] Use environment variables for secrets
+
+## Support
+
+- Streamlit Docs: https://docs.streamlit.io/
+- Docker Docs: https://docs.docker.com/
+- Nginx Docs: https://nginx.org/en/docs/
+
+---
+
+**For complete step-by-step instructions, go to [`deploy/README.md`](deploy/README.md)**
+
 ```bash
 docker-compose down
 docker-compose up -d --build
