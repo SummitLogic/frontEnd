@@ -2,12 +2,13 @@ version: '3.8'
 
 services:
   streamlit:
-    build: .
+    build: ../
     container_name: gateflow-dashboard
     ports:
       - "8501:8501"
     volumes:
-      - ./assets:/app/assets
+      - ../assets:/app/assets
+      - ../data:/app/data
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0

@@ -1,6 +1,28 @@
-# Assets folder
+# Assets Folder
 
-Place the persistent logo file here with the name `logo.png` (or `logo.jpg`).
-The app `gategroupDashboard.py` will use `assets/logo.png` if it exists. If you upload a logo via the app UI, it will be saved to this path.
+This folder contains static assets for the GateFlow Dashboard.
 
-Do not commit large images unless necessary. Keep the logo optimized for web (e.g., 400x80 or similar).
+## Contents
+
+- `logo.png` - Primary dashboard logo
+- `logo2.png` - Alternative logo
+
+## Usage
+
+These images are used in the Streamlit application UI. The application references them via relative paths:
+
+```python
+assets/logo.png
+assets/logo2.png
+```
+
+## Guidelines
+
+- Keep images optimized for web (recommended: 400x80px for logos)
+- Use PNG format for logos with transparency
+- Avoid committing unnecessarily large files
+
+## Note
+
+User-generated data (like `users.json`) has been moved to the `data/` folder for better security and organization.
+

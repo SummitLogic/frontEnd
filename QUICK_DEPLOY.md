@@ -1,188 +1,393 @@
-# Quick Deployment Guide for smart-gate.tech
+# Quick Deployment Guide for smart-gate.tech# Quick Deployment Guide for smart-gate.tech
 
-## Step-by-Step Deployment Instructions
 
-### Option 1: Deploy with VPS (Recommended - Most Control)
 
-#### Prerequisites:
-- A VPS/Cloud Server (DigitalOcean, AWS EC2, Linode, Vultr, etc.)
-- SSH access to your server
-- Root or sudo access
+> **⚡ FASTEST WAY:** Use the automated script  > **⚡ FASTEST WAY:** Use the automated script in `deploy/quick-deploy.sh`
 
-#### Step 1: Configure Your Domain DNS
+> ```bash
 
-Go to your domain registrar (where you bought smart-gate.tech) and add these DNS records:
+> cd deploy## 🚀 Super Quick Start
 
-```
-Type: A
-Name: @
-Value: YOUR_SERVER_IP_ADDRESS
-TTL: 3600
+> chmod +x quick-deploy.sh
 
-Type: A
-Name: www
-Value: YOUR_SERVER_IP_ADDRESS
-TTL: 3600
-```
+> ./quick-deploy.sh```bash
 
-**Note:** DNS propagation can take up to 48 hours, but usually completes in 15-30 minutes.
+> ```cd deploy
 
-#### Step 2: Set Up Your Server
+chmod +x quick-deploy.sh
 
-SSH into your server:
-```bash
-ssh root@YOUR_SERVER_IP
-# or
-ssh your-username@YOUR_SERVER_IP
-```
+## 🚀 Three Deployment Options./quick-deploy.sh
 
-Install required software:
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
+# Choose option 1 for development, option 2 for production
 
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
+### Option 1: Docker on VPS (Recommended - Full Control)```
 
-# Install Docker Compose
-sudo apt install docker-compose -y
 
-# Install Nginx
-sudo apt install nginx -y
 
-# Install Certbot for free SSL
-sudo apt install certbot python3-certbot-nginx -y
+**Best for:** Production use, custom domain with SSL, full control  ## Step-by-Step Deployment Instructions
 
-# Install Git
-sudo apt install git -y
-```
+**Cost:** ~$5-20/month  
 
-Log out and log back in for Docker permissions to take effect:
-```bash
-exit
-ssh root@YOUR_SERVER_IP
-```
+**Time:** 15-30 minutes### Option 1: Deploy with Docker (Recommended)
 
-#### Step 3: Deploy Your Application
 
-```bash
-# Navigate to home directory
-cd ~
 
-# Clone your repository (if using Git)
-git clone https://github.com/SummitLogic/frontEnd.git
-cd frontEnd
+#### Quick Steps:#### Prerequisites:
 
-# OR upload files using SCP from your local machine:
-# scp -r /home/soni/hackmty25/frontEnd root@YOUR_SERVER_IP:/root/
-# Then: cd frontEnd
-```
+- Docker installed on your machine/server
 
-Build and run the Docker container:
-```bash
-docker-compose up -d --build
-```
+1. **Set up DNS** (at your domain registrar):- Domain DNS configured (A record pointing to your server IP)
 
-Check if it's running:
-```bash
-docker-compose ps
-docker-compose logs -f
-# Press Ctrl+C to exit logs
-```
+   ```
 
-#### Step 4: Configure Nginx
+   Type: A#### Quick Commands:
 
-```bash
-# Copy nginx configuration
-sudo cp nginx.conf /etc/nginx/sites-available/smart-gate
+   Name: @
 
-# Enable the site
-sudo ln -s /etc/nginx/sites-available/smart-gate /etc/nginx/sites-enabled/
+   Value: YOUR_SERVER_IP**Local Testing:**
 
-# Remove default nginx site
-sudo rm -f /etc/nginx/sites-enabled/default
+   ``````bash
 
-# Test nginx configuration
-sudo nginx -t
+cd frontEnd/deploy
 
-# If test is successful, restart nginx
-sudo systemctl restart nginx
-sudo systemctl enable nginx
-```
+2. **Prepare server:**docker compose up --build
 
-#### Step 5: Open Firewall Ports
+   ```bash# Access at http://localhost:8501
 
-```bash
-# Allow HTTP and HTTPS traffic
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 22/tcp  # SSH (important!)
+   # Install Docker```
 
-# Enable firewall (if not already enabled)
-sudo ufw --force enable
+   curl -fsSL https://get.docker.com -o get-docker.sh
 
-# Check status
-sudo ufw status
-```
+   sudo sh get-docker.sh**Production with Nginx:**
 
-#### Step 6: Setup Free SSL Certificate (HTTPS)
+   ```bash
 
-```bash
-# Get SSL certificate from Let's Encrypt
-sudo certbot --nginx -d smart-gate.tech -d www.smart-gate.tech
+   # Clone repositorycd frontEnd/deploy
 
-# Follow the prompts:
-# - Enter your email
-# - Agree to terms
-# - Choose to redirect HTTP to HTTPS (option 2)
-```
+   git clone https://github.com/SummitLogic/frontEnd.gitdocker compose -f docker-compose.prod.yml up -d --build
 
-Certbot will automatically configure HTTPS in Nginx!
+   cd frontEnd/deploy```
 
-#### Step 7: Verify Deployment
-
-Visit in your browser:
-- http://smart-gate.tech (should redirect to HTTPS)
-- https://smart-gate.tech (secure version)
-
-### Step 8: Enable Auto-Renewal for SSL
-
-```bash
-# Test renewal
-sudo certbot renew --dry-run
-
-# Certificate will auto-renew via cron
-```
+   ```
 
 ---
 
+3. **Deploy:**
+
+   ```bash### Option 2: Deploy on VPS (Full Control)
+
+   # Development mode
+
+   docker compose up -d --build#### Prerequisites:
+
+   - A VPS/Cloud Server (DigitalOcean, AWS EC2, Linode, Vultr, etc.)
+
+   # OR Production with nginx- SSH access to your server
+
+   docker compose -f docker-compose.prod.yml up -d --build- Domain: smart-gate.tech pointing to server IP
+
+   ```
+
+#### Step 1: Configure DNS
+
+4. **Set up SSL:**
+
+   ```bashAdd these DNS records at your domain registrar:
+
+   sudo apt install certbot python3-certbot-nginx -y
+
+   sudo certbot --nginx -d smart-gate.tech -d www.smart-gate.tech```
+
+   ```Type: A
+
+Name: @
+
+**Done!** Access at https://smart-gate.techValue: YOUR_SERVER_IP
+
+TTL: 3600
+
+---
+
+Type: A  
+
+### Option 2: Streamlit Community Cloud (Easiest - FREE)Name: www
+
+Value: YOUR_SERVER_IP
+
+**Best for:** Quick testing, no server management  TTL: 3600
+
+**Cost:** FREE  ```
+
+**Time:** 5-10 minutes
+
+**DNS propagation:** 15-30 minutes (up to 48 hours)
+
+#### Steps:
+
+#### Step 2: Server Setup
+
+1. **Push to GitHub:**
+
+   ```bash```bash
+
+   cd /home/soni/hackmty25/frontEnd# SSH into server
+
+   git add .ssh root@YOUR_SERVER_IP
+
+   git commit -m "Deploy to Streamlit Cloud"
+
+   git push origin main# Install Docker
+
+   ```curl -fsSL https://get.docker.com -o get-docker.sh
+
+sudo sh get-docker.sh
+
+2. **Deploy:**sudo usermod -aG docker $USER
+
+   - Go to https://share.streamlit.io/
+
+   - Sign in with GitHub# Install other tools
+
+   - Click "New app"sudo apt update && sudo apt install -y git nginx certbot python3-certbot-nginx
+
+   - Select repository: `SummitLogic/frontEnd`
+
+   - Main file: `gategroupDashboard.py`# Logout and login again for Docker permissions
+
+   - Deploy!exit
+
+ssh root@YOUR_SERVER_IP
+
+3. **Custom domain (optional):**```
+
+   - Add CNAME record in DNS:
+
+     ```#### Step 3: Deploy Application
+
+     Type: CNAME
+
+     Name: www```bash
+
+     Value: your-app.streamlit.app# Clone repository
+
+     ```git clone https://github.com/SummitLogic/frontEnd.git
+
+cd frontEnd/deploy
+
+**See full guide:** [STREAMLIT_CLOUD_DEPLOYMENT.md](STREAMLIT_CLOUD_DEPLOYMENT.md)
+
+# Deploy with production setup
+
+---docker compose -f docker-compose.prod.yml up -d --build
+
+
+
+### Option 3: Railway/Render (Easy + Affordable)# Check logs
+
+docker compose logs -f
+
+**Best for:** Automated deployment, easy scaling  ```
+
+**Cost:** $5-7/month (FREE tier available)  
+
+**Time:** 10-15 minutes#### Step 4: Set up SSL (HTTPS)
+
+
+
+#### Railway:```bash
+
+# Get SSL certificate
+
+1. Push code to GitHub (same as Option 2)sudo certbot --nginx -d smart-gate.tech -d www.smart-gate.tech
+
+2. Go to https://railway.app/
+
+3. "New Project" → "Deploy from GitHub"# Certificates auto-renew, but test it:
+
+4. Select repositorysudo certbot renew --dry-run
+
+5. Add custom domain in settings```
+
+
+
+#### Render:---
+
+
+
+1. Go to https://render.com/### Option 3: Streamlit Community Cloud (Easiest - No Server Needed)
+
+2. "New" → "Web Service"
+
+3. Connect GitHub repository# Enable the site
+
+4. Render auto-detects Dockerfilesudo ln -s /etc/nginx/sites-available/smart-gate /etc/nginx/sites-enabled/
+
+5. Deploy!
+
+# Remove default nginx site
+
+---sudo rm -f /etc/nginx/sites-enabled/default
+
+
+
+## 📋 Detailed Guides# Test nginx configuration
+
+sudo nginx -t
+
+- **Full VPS deployment:** [`deploy/README.md`](deploy/README.md)
+
+- **Streamlit Cloud:** [`STREAMLIT_CLOUD_DEPLOYMENT.md`](STREAMLIT_CLOUD_DEPLOYMENT.md)# If test is successful, restart nginx
+
+- **General deployment:** [`DEPLOYMENT.md`](DEPLOYMENT.md)sudo systemctl restart nginx
+
+sudo systemctl enable nginx
+
+---```
+
+
+
+## 🔧 Troubleshooting#### Step 5: Open Firewall Ports
+
+
+
+**Container won't start:**```bash
+
+```bash# Allow HTTP and HTTPS traffic
+
+docker compose logs -fsudo ufw allow 80/tcp
+
+```sudo ufw allow 443/tcp
+
+sudo ufw allow 22/tcp  # SSH (important!)
+
+**Port already in use:**
+
+```bash# Enable firewall (if not already enabled)
+
+sudo lsof -i :8501sudo ufw --force enable
+
+# Kill process or change port in deploy/docker-compose.yml
+
+```# Check status
+
+sudo ufw status
+
+**Domain not working:**```
+
+```bash
+
+# Check DNS#### Step 6: Setup Free SSL Certificate (HTTPS)
+
+nslookup smart-gate.tech
+
+```bash
+
+# Check nginx# Get SSL certificate from Let's Encrypt
+
+sudo systemctl status nginxsudo certbot --nginx -d smart-gate.tech -d www.smart-gate.tech
+
+```
+
+# Follow the prompts:
+
+**SSL certificate failed:**# - Enter your email
+
+```bash# - Agree to terms
+
+# Ensure DNS is propagated first# - Choose to redirect HTTP to HTTPS (option 2)
+
+# Then retry:```
+
+sudo certbot --nginx -d smart-gate.tech
+
+```Certbot will automatically configure HTTPS in Nginx!
+
+
+
+---#### Step 7: Verify Deployment
+
+
+
+## 🛠️ MaintenanceVisit in your browser:
+
+- http://smart-gate.tech (should redirect to HTTPS)
+
+```bash- https://smart-gate.tech (secure version)
+
+# Update application
+
+cd frontEnd/deploy### Step 8: Enable Auto-Renewal for SSL
+
+git pull
+
+docker compose down```bash
+
+docker compose up -d --build# Test renewal
+
+sudo certbot renew --dry-run
+
+# View logs
+
+docker compose logs -f# Certificate will auto-renew via cron
+
+```
+
+# Restart
+
+docker compose restart---
+
+```
+
 ## Option 2: Deploy with Streamlit Community Cloud (Easiest - FREE)
+
+---
 
 #### Step 1: Push Code to GitHub
 
-```bash
-cd /home/soni/hackmty25/frontEnd
+## 💰 Hosting Comparison
 
-# Initialize git if not already done
-git init
-git add .
-git commit -m "Initial commit"
+```bash
+
+| Provider | Cost/Month | Free Tier | SSL | Custom Domain |cd /home/soni/hackmty25/frontEnd
+
+|----------|-----------|-----------|-----|---------------|
+
+| **Streamlit Cloud** | $0-20 | ✅ Yes | ✅ Auto | ⚠️ Limited |# Initialize git if not already done
+
+| **DigitalOcean** | $6 | ❌ No | ✅ Manual | ✅ Full |git init
+
+| **Railway** | $5 | ⚠️ 500hrs | ✅ Auto | ✅ Full |git add .
+
+| **Render** | $7 | ⚠️ Limited | ✅ Auto | ✅ Full |git commit -m "Initial commit"
+
+| **Linode** | $5 | ❌ No | ✅ Manual | ✅ Full |
 
 # Push to GitHub (create repo at github.com first)
-git remote add origin https://github.com/SummitLogic/frontEnd.git
+
+---git remote add origin https://github.com/SummitLogic/frontEnd.git
+
 git branch -M main
-git push -u origin main
+
+## 📚 Resourcesgit push -u origin main
+
 ```
 
-#### Step 2: Deploy on Streamlit Cloud
+- [Docker Documentation](https://docs.docker.com/)
 
-1. Go to https://share.streamlit.io/
+- [Nginx Documentation](https://nginx.org/en/docs/)#### Step 2: Deploy on Streamlit Cloud
+
+- [Streamlit Documentation](https://docs.streamlit.io/)
+
+- [Let's Encrypt](https://letsencrypt.org/)1. Go to https://share.streamlit.io/
+
 2. Sign in with your GitHub account
-3. Click "New app"
+
+---3. Click "New app"
+
 4. Select your repository: `SummitLogic/frontEnd`
-5. Main file path: `gategroupDashboard.py`
+
+**Need help?** Check [`deploy/README.md`](deploy/README.md) for detailed instructions.5. Main file path: `gategroupDashboard.py`
+
 6. Click "Deploy"
 
 #### Step 3: Configure Custom Domain

@@ -172,7 +172,7 @@ if IS_STANDALONE_FLIGHTCREW:
     # Resolve full name from users.json if possible
     full_name = None
     username_key = st.session_state.get('username')
-    users_path = os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
+    users_path = os.path.join(os.path.dirname(__file__), 'data', 'users.json')
     if username_key and os.path.exists(users_path):
         try:
             with open(users_path, 'r', encoding='utf-8') as uf:
@@ -221,7 +221,7 @@ if IS_STANDALONE_FLIGHTCREW:
 
 # Login form
 def _users_file_path():
-    return os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
+    return os.path.join(os.path.dirname(__file__), 'data', 'users.json')
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()

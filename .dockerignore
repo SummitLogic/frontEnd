@@ -10,5 +10,10 @@ venv/
 .git
 .gitignore
 .DS_Store
-README.md
+*.md
+DEPLOYMENT.md
+QUICK_DEPLOY.md
+STREAMLIT_CLOUD_DEPLOYMENT.md
+STRUCTURE_PROPOSAL.md
 .streamlit/secrets.toml
+test-docker.sh
