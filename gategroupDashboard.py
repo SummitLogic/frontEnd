@@ -298,6 +298,7 @@ if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
             else:
                 render_groundcrew(uri1, uri2)
     else:
+<<<<<<< HEAD
         # No sub requested: render the crew home
         if IS_STANDALONE_FLIGHTCREW:
             render_flightcrew(uri1, uri2)
@@ -310,12 +311,64 @@ if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
     except Exception:
         # If st.stop() is not available for some Streamlit version, just return
         pass
+=======
+        st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
+
+    # Top header: left = welcome box, right = local date/time
+    # Resolve full name from users.json if possible
+    full_name = None
+    username_key = st.session_state.get('username')
+    users_path = os.path.join(os.path.dirname(__file__), 'data', 'users.json')
+    if username_key and os.path.exists(users_path):
+        try:
+            with open(users_path, 'r', encoding='utf-8') as uf:
+                all_users = json.load(uf)
+                for u in all_users:
+                    if u.get('username') == username_key or u.get('email') == username_key:
+                        first = u.get('name', '').strip()
+                        last = u.get('last', '').strip()
+                        if first or last:
+                            full_name = f"{first} {last}".strip()
+                        break
+        except Exception:
+            full_name = None
+
+    if not full_name:
+        # fallback to username or placeholder
+        full_name = st.session_state.get('username') or '---'
+
+    # local date/time
+    now = datetime.now()
+    local_dt = now.strftime('%A, %d %B %Y — %H:%M')
+
+    # render header with welcome and clock
+    header_html = f"""
+    <div style='display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px;'>
+      <div style='background:rgba(255,255,255,0.02); padding:18px; border-radius:10px;'>
+        <h2 style='margin:0; color:var(--gold);'>Bienvenido de vuelta, {full_name}</h2>
+      </div>
+      <div style='background:rgba(255,255,255,0.02); padding:12px 16px; border-radius:8px; text-align:right;'>
+        <div style='font-weight:600; color:var(--gold);'>{local_dt}</div>
+      </div>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+    st.markdown("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.button("Ver manifiesto de vuelo")
+    with c2:
+        st.button("Reporte rápido de galley")
+    st.markdown("---")
+    st.markdown("[Volver a la app principal](./)")
+    st.stop()
+>>>>>>> 822a55df5934cef6daa169ff82b1385e6cfa0b3a
 
 # Note: removed experimental_get_query_params usage per deprecation; FlightCrew UI is provided as an inline tab below.
 
 # Login form
 def _users_file_path():
-    return os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
+    return os.path.join(os.path.dirname(__file__), 'data', 'users.json')
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
