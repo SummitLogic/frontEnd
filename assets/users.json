@@ -30,5 +30,29 @@
     "email": "test3@test.mx",
     "role": "GroundCrew",
     "password": "ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae"
+  },
+  {
+    "username": "rssq",
+    "name": "Rigoberto",
+    "last": "Soto Quiroga",
+    "email": "lalala@gmail.com",
+    "role": "FlightCrew",
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+  },
+  {
+    "username": "soni",
+    "name": "David",
+    "last": "Soni Cuenvas",
+    "email": "soni@gmail.com",
+    "role": "GroundCrew",
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+  },
+  {
+    "username": "santi",
+    "name": "santi",
+    "last": "q",
+    "email": "santi@gmail.com",
+    "role": "FlightCrew",
+    "password": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
   }
 ]

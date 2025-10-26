@@ -1,0 +1,19 @@
+import streamlit as st
+from .utils import safe_rerun
+
+
+def render():
+    st.title("Entrenamiento")
+    st.subheader("Flight Crew")
+
+    # Back link to crew home (anchor ensures single-click URL navigation)
+    st.markdown("""
+        <a href='?page=flightcrew' style='display:inline-block;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:6px;color:var(--gold);text-decoration:none;'>
+            ← Volver al Home
+        </a>
+    """, unsafe_allow_html=True)
+
+    st.write("Sección de Entrenamiento para pilotos/azafatas.")
+    st.write("- Cursos disponibles")
+    st.write("- Progreso de empleados")
+    st.write("- Materiales de apoyo")

@@ -11,6 +11,17 @@ import re
 from datetime import datetime
 import requests
 import time
+from app_parts.login_page import render_login
+from app_parts.flightcrew_home import render_flightcrew
+from app_parts.groundcrew_home import render_groundcrew
+
+# Subpage modules (standalone)
+from app_parts.flight_alcohol import render as render_flight_alcohol
+from app_parts.flight_inventory import render as render_flight_inventory
+from app_parts.flight_training import render as render_flight_training
+from app_parts.ground_alcohol import render as render_ground_alcohol
+from app_parts.ground_inventory import render as render_ground_inventory
+from app_parts.ground_training import render as render_ground_training
 
 # Page configuration
 st.set_page_config(
@@ -29,6 +40,24 @@ for _k, _v in {
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
+
+# Try to restore persisted session (local fallback) if available and session not already logged in
+try:
+    from app_parts.utils import load_session
+    if not st.session_state.get('logged_in'):
+        sess = load_session()
+        if sess and isinstance(sess, dict):
+            user = sess.get('user')
+            token = sess.get('token')
+            if user:
+                st.session_state['user'] = user
+                st.session_state['username'] = user.get('username') or user.get('email') or st.session_state.get('username')
+                st.session_state['role'] = user.get('role') or st.session_state.get('role')
+                if token:
+                    st.session_state['token'] = token
+                st.session_state['logged_in'] = True
+except Exception:
+    pass
 
 
 def safe_rerun():
@@ -118,6 +147,8 @@ st.markdown("""
 
     /* Prevent placeholder images from adding bright backgrounds */
     img[alt="logo"] { background-color: transparent !important; }
+    /* Hide the Streamlit left sidebar entirely (app-wide) */
+    [data-testid="stSidebar"] { display: none !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -126,6 +157,50 @@ try:
     _params = st.query_params
 except Exception:
     _params = {}
+# If the user clicked the logout anchor (?logout=1), perform a full reset:
+# - remove persisted session file
+# - clear all session_state entries
+# - clear query params and rerun so the app returns to the initial access screen
+try:
+    if _params and ('logout' in _params or _params.get('logout')):
+        try:
+            from app_parts.utils import clear_session
+            clear_session()
+        except Exception:
+            pass
+
+        # Safely remove all session_state keys to fully reset the app state
+        try:
+            keys = list(st.session_state.keys())
+            for k in keys:
+                del st.session_state[k]
+        except Exception:
+            # Best-effort: clear common keys if full clear fails
+            for _k in ('logged_in', 'username', 'role', 'token', 'user', 'goto_page'):
+                if _k in st.session_state:
+                    del st.session_state[_k]
+
+        try:
+            # clear URL params
+            st.experimental_set_query_params()
+        except Exception:
+            pass
+
+        # Force a rerun so the app initializes as if freshly started
+        try:
+            if hasattr(st, 'experimental_rerun'):
+                st.experimental_rerun()
+        except Exception:
+            try:
+                st.stop()
+            except Exception:
+                pass
+        try:
+            st.stop()
+        except Exception:
+            pass
+except Exception:
+    pass
 _page = None
 if _params:
     v = _params.get('page')
@@ -133,6 +208,13 @@ if _params:
         _page = v[0] if v else None
     else:
         _page = v
+_sub = None
+if _params:
+    s = _params.get('sub')
+    if isinstance(s, list):
+        _sub = s[0] if s else None
+    else:
+        _sub = s
 # Support programmatic navigation set via session_state['goto_page'] as a fallback
 if not _page and st.session_state.get('goto_page'):
     _page = st.session_state.pop('goto_page', None)
@@ -175,87 +257,59 @@ with col_c:
 
     if uri1 or uri2:
         # show both logos side-by-side when available
-        imgs = "<div class='logo-center' style='display:flex; justify-content:center; gap:18px; align-items:center;'>"
+        imgs = "<div class='logo-center' style='display:flex; justify-content:center; gap:40px; align-items:center;'>"
         if uri1:
             imgs += f"<img src='{uri1}' width='320' alt='logo' style='max-height:120px; object-fit:contain;'/>"
         if uri2:
-            imgs += f"<img src='{uri2}' width='320' alt='logo2' style='max-height:120px; object-fit:contain;'/>"
+            # Make logo2 larger than the primary logo on the access screen and nudge it down
+            # Increased margin-top by 20px as requested
+            imgs += f"<img src='{uri2}' width='770' alt='logo2' style='max-height:230px; object-fit:contain; margin-top:32px;'/>"
         imgs += "</div>"
-        # Only show top logos if we are NOT rendering the standalone FlightCrew page
-        if not IS_STANDALONE_FLIGHTCREW:
+        # Only show top logos if we are NOT rendering any standalone page
+        if not IS_STANDALONE:
             st.markdown(imgs, unsafe_allow_html=True)
     else:
         if not IS_STANDALONE_FLIGHTCREW:
             st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
 
-# If the request is for the standalone FlightCrew page, render it here (using uri1/uri2) and stop further rendering
-if IS_STANDALONE_FLIGHTCREW:
-    # Build logo block for standalone page
-    if uri1 or uri2:
-        # Use a slightly different top margin depending on whether this is the standalone page
-        if not IS_STANDALONE_FLIGHTCREW:
-            top_margin = '-240px'  # pull logos slightly more up in the main app/tab
+# If request is for a standalone crew page, delegate to the appropriate renderer
+if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
+    # If a subpage is requested (e.g. ?page=flightcrew&sub=alcohol), render that standalone subpage
+    if _sub:
+        sub = (_sub or '').lower()
+        if IS_STANDALONE_FLIGHTCREW:
+            if sub == 'alcohol':
+                render_flight_alcohol()
+            elif sub in ('inventario', 'inventory', 'inv'):
+                render_flight_inventory()
+            elif sub in ('entrenamiento', 'training', 'trn'):
+                render_flight_training()
+            else:
+                # Unknown subpage: fall back to flightcrew home
+                render_flightcrew(uri1, uri2)
         else:
-            top_margin = '-110px'   # lift logos slightly more in standalone view
-        imgs = f"<div class='logo-center' style='display:flex; justify-content:center; gap:12px; align-items:center; margin-top:{top_margin};'>"
-        if uri1:
-            imgs += f"<img src='{uri1}' width='220' alt='logo' style='max-height:80px; object-fit:contain;'/>"
-        if uri2:
-            imgs += f"<img src='{uri2}' width='220' alt='logo2' style='max-height:80px; object-fit:contain;'/>"
-        imgs += "</div>"
-        # In standalone page we want to show the logos here as well
-        st.markdown(imgs, unsafe_allow_html=True)
+            # groundcrew subpages
+            if sub == 'alcohol':
+                render_ground_alcohol()
+            elif sub in ('inventario', 'inventory', 'inv'):
+                render_ground_inventory()
+            elif sub in ('entrenamiento', 'training', 'trn'):
+                render_ground_training()
+            else:
+                render_groundcrew(uri1, uri2)
     else:
-        st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
-
-    # Top header: left = welcome box, right = local date/time
-    # Resolve full name from users.json if possible
-    full_name = None
-    username_key = st.session_state.get('username')
-    users_path = os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
-    if username_key and os.path.exists(users_path):
-        try:
-            with open(users_path, 'r', encoding='utf-8') as uf:
-                all_users = json.load(uf)
-                for u in all_users:
-                    if u.get('username') == username_key or u.get('email') == username_key:
-                        first = u.get('name', '').strip()
-                        last = u.get('last', '').strip()
-                        if first or last:
-                            full_name = f"{first} {last}".strip()
-                        break
-        except Exception:
-            full_name = None
-
-    if not full_name:
-        # fallback to username or placeholder
-        full_name = st.session_state.get('username') or '---'
-
-    # local date/time
-    now = datetime.now()
-    local_dt = now.strftime('%A, %d %B %Y — %H:%M')
-
-    # render header with welcome and clock
-    header_html = f"""
-    <div style='display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px;'>
-      <div style='background:rgba(255,255,255,0.02); padding:18px; border-radius:10px;'>
-        <h2 style='margin:0; color:var(--gold);'>Bienvenido de vuelta, {full_name}</h2>
-      </div>
-      <div style='background:rgba(255,255,255,0.02); padding:12px 16px; border-radius:8px; text-align:right;'>
-        <div style='font-weight:600; color:var(--gold);'>{local_dt}</div>
-      </div>
-    </div>
-    """
-    st.markdown(header_html, unsafe_allow_html=True)
-    st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.button("Ver manifiesto de vuelo")
-    with c2:
-        st.button("Reporte rápido de galley")
-    st.markdown("---")
-    st.markdown("[Volver a la app principal](./)")
-    st.stop()
+        # No sub requested: render the crew home
+        if IS_STANDALONE_FLIGHTCREW:
+            render_flightcrew(uri1, uri2)
+        else:
+            render_groundcrew(uri1, uri2)
+    # When rendering a standalone crew page (home or a subpage) we must stop
+    # further execution so the login/access UI below does not render under it.
+    try:
+        st.stop()
+    except Exception:
+        # If st.stop() is not available for some Streamlit version, just return
+        pass
 
 # Note: removed experimental_get_query_params usage per deprecation; FlightCrew UI is provided as an inline tab below.
 
@@ -287,200 +341,10 @@ def _valid_email(email: str) -> bool:
 
 
 if not st.session_state['logged_in']:
-    st.markdown("## Acceso")
-    tab_login, tab_register = st.tabs(["Iniciar sesión", "Registrarse"])
+    # Delegate the login/register UI to the modular page
+    render_login(uri1=uri1, uri2=uri2, is_standalone=IS_STANDALONE, public_flight_access=PUBLIC_FLIGHTCREW_ACCESS)
 
-    with tab_login:
-        login_id = st.text_input("Usuario o correo", value=st.session_state.get('username', ''), key='login_id')
-        login_pw = st.text_input("Contraseña", type='password', key='login_pw')
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            if st.button("Iniciar sesión", key='login_btn'):
-                # First try remote login using provided API (prefer email)
-                login_api = "https://summitlogicapidb-production.up.railway.app/api/auth/login"
-                did_remote = False
-                if login_id.strip() and login_pw.strip():
-                    try:
-                        payload = {"email": login_id.strip(), "password": login_pw.strip()}
-                        resp = requests.post(login_api, json=payload, timeout=8)
-                        did_remote = True
-                        if 200 <= resp.status_code < 300:
-                            try:
-                                data = resp.json()
-                            except Exception:
-                                data = {}
-
-                            # server expected to return token and user
-                            token = data.get('token') or data.get('accessToken') or None
-                            user = data.get('user') or data.get('data') or {}
-                            server_role = None
-                            if isinstance(user, dict):
-                                server_role = user.get('role')
-
-                            # Normalise role and choose target page
-                            target_page = 'groundcrew'
-                            if server_role:
-                                if 'flight' in server_role.lower():
-                                    target_page = 'flightcrew'
-                                else:
-                                    target_page = 'groundcrew'
-
-                            # persist into session_state
-                            st.session_state['logged_in'] = True
-                            st.session_state['username'] = user.get('username') or user.get('email') or login_id.strip()
-                            st.session_state['role'] = server_role or ''
-                            st.session_state['token'] = token
-                            st.success(f"Bienvenido, {st.session_state['username']}!")
-
-                            # set query param to open the appropriate standalone page
-                            try:
-                                st.experimental_set_query_params(page=target_page)
-                            except Exception:
-                                # fallback: set a session var that the top of the script will read
-                                st.session_state['goto_page'] = target_page
-
-                            safe_rerun()
-                        else:
-                            # remote auth failed; show server message and fall back to local
-                            try:
-                                msg = resp.json().get('message') or resp.text
-                            except Exception:
-                                msg = resp.text
-                            st.warning(f"Autenticación remota falló: {msg}")
-                    except Exception as e:
-                        st.info(f"No se pudo conectar con el servidor de autenticación: {e}. Intentando autenticación local...")
-
-                # If remote login was not attempted or failed, try local users file behavior
-                users = load_users()
-                if users:
-                    found = None
-                    for u in users:
-                        if u.get('username') == login_id or u.get('email') == login_id:
-                            found = u
-                            break
-                    if not found:
-                        st.error("Usuario no registrado. Por favor regístrate.")
-                    else:
-                        if found.get('password') == hash_password(login_pw):
-                            st.session_state['logged_in'] = True
-                            st.session_state['username'] = found.get('username')
-                            st.session_state['role'] = found.get('role')
-                            st.success(f"Bienvenido, {st.session_state['username']}!")
-                            # local users: choose page based on stored role
-                            if found.get('role') and 'flight' in found.get('role').lower():
-                                try:
-                                    st.experimental_set_query_params(page='flightcrew')
-                                except Exception:
-                                    st.session_state['goto_page'] = 'flightcrew'
-                            else:
-                                try:
-                                    st.experimental_set_query_params(page='groundcrew')
-                                except Exception:
-                                    st.session_state['goto_page'] = 'groundcrew'
-                            safe_rerun()
-                        else:
-                            st.error("Credenciales inválidas.")
-                else:
-                    # no users registered yet - allow any non-empty for demo
-                    if login_id.strip() and login_pw.strip():
-                        st.session_state['logged_in'] = True
-                        st.session_state['username'] = login_id.strip()
-                        st.success(f"Bienvenido, {st.session_state['username']}!")
-                        safe_rerun()
-                    else:
-                        st.error("Por favor ingresa usuario y contraseña.")
-
-    with tab_register:
-        reg_name = st.text_input("Nombre", key='reg_name')
-        reg_last = st.text_input("Apellidos", key='reg_last')
-        reg_email = st.text_input("Correo electrónico", key='reg_email')
-        reg_username = st.text_input("Usuario (para inicio de sesión)", key='reg_username')
-        # Use role labels without spaces as requested
-        reg_role = st.selectbox("Rol", ["FlightCrew", "GroundCrew"], key='reg_role')
-        reg_pw = st.text_input("Contraseña", type='password', key='reg_pw')
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            if st.button("Registrarse", key='register_btn'):
-                # basic validation
-                if not (reg_name.strip() and reg_last.strip() and reg_email.strip() and reg_username.strip() and reg_pw.strip()):
-                    st.error("Por favor completa todos los campos.")
-                elif not _valid_email(reg_email.strip()):
-                    st.error("Ingresa un correo válido.")
-                else:
-                    users = load_users()
-                    # check duplicates
-                    for u in users:
-                        if u.get('username') == reg_username.strip():
-                            st.error("El usuario ya existe. Elige otro usuario.")
-                            break
-                        if u.get('email') == reg_email.strip():
-                            st.error("Ya existe una cuenta con ese correo.")
-                            break
-                    else:
-                                    # Try to register via remote API first
-                                    api_url = "https://summitlogicapidb-production.up.railway.app/api/auth/register"
-                                    # The UI shows roles without spaces (FlightCrew/GroundCrew).
-                                    # The server expects the human-readable values with a space.
-                                    role_send_map = {
-                                        "FlightCrew": "Flight Crew",
-                                        "GroundCrew": "Ground Crew"
-                                    }
-                                    payload = {
-                                        "firstName": reg_name.strip(),
-                                        "lastName": reg_last.strip(),
-                                        "email": reg_email.strip(),
-                                        "username": reg_username.strip(),
-                                        # translate to the server-expected form
-                                        "role": role_send_map.get(reg_role, reg_role),
-                                        "password": reg_pw.strip()
-                                    }
-                                    try:
-                                        resp = requests.post(api_url, json=payload, timeout=10)
-                                        if 200 <= resp.status_code < 300:
-                                            st.success('Registro exitoso en el servidor. Ahora estás logueado.')
-                                            st.session_state['logged_in'] = True
-                                            st.session_state['username'] = reg_username.strip()
-                                            st.session_state['role'] = reg_role
-                                            # Optionally persist locally for offline fallback
-                                            try:
-                                                new_user = {
-                                                    'username': reg_username.strip(),
-                                                    'name': reg_name.strip(),
-                                                    'last': reg_last.strip(),
-                                                    'email': reg_email.strip(),
-                                                    'role': reg_role,
-                                                    'password': hash_password(reg_pw.strip())
-                                                }
-                                                users.append(new_user)
-                                                save_users(users)
-                                            except Exception:
-                                                pass
-                                            safe_rerun()
-                                        else:
-                                            # try to extract message from server
-                                            try:
-                                                err = resp.json().get('message') or resp.text
-                                            except Exception:
-                                                err = resp.text
-                                            st.error(f"Registro falló en el servidor: {err}")
-                                    except Exception as e:
-                                        st.warning(f"No se pudo conectar con el servidor de registro: {e}. Intentando guardado local...")
-                                        # fallback to local registration
-                                        new_user = {
-                                            'username': reg_username.strip(),
-                                            'name': reg_name.strip(),
-                                            'last': reg_last.strip(),
-                                            'email': reg_email.strip(),
-                                            'role': reg_role,
-                                            'password': hash_password(reg_pw.strip())
-                                        }
-                                        users.append(new_user)
-                                        save_users(users)
-                                        st.success('Registro local exitoso. Ahora estás logueado.')
-                                        st.session_state['logged_in'] = True
-                                        st.session_state['username'] = new_user['username']
-                                        st.session_state['role'] = new_user['role']
-                                        safe_rerun()
+    # Registration UI moved to `app_parts.login_page.render_login`
 
     # stop further rendering until logged in (allow public FlightCrew if configured)
     if not st.session_state['logged_in'] and not PUBLIC_FLIGHTCREW_ACCESS:
@@ -490,43 +354,7 @@ if not st.session_state['logged_in']:
 # page is still available at ?page=flightcrew but we remove the in-app FlightCrew tab and card.
 
 # Sidebar
-with st.sidebar:
-    # Logout button
-    if st.session_state.get('logged_in'):
-        if st.button("Cerrar sesión"):
-            st.session_state['logged_in'] = False
-            st.session_state['username'] = ''
-            safe_rerun()
-
-    st.image("https://via.placeholder.com/200x80/1f77b4/ffffff?text=SummitLogic", use_column_width=True)
-    st.markdown("---")
-    
-    st.subheader("About GateFlow")
-    st.markdown("""
-        GateFlow is SummitLogic's all-in-one application for galley operations, unifying:
-        
-        - 🍾 Alcohol bottle handling
-        - ⚠️ Real-time error detection
-        - 👥 Employee training & engagement
-        
-        Into a single role-aware experience.
-    """)
-    
-    st.markdown("---")
-    
-    st.subheader("Key Benefits")
-    st.success("✅ 20-30% waste reduction")
-    st.success("✅ 50% fewer packing errors")
-    st.success("✅ 30% faster employee ramp-up")
-    st.success("✅ 20% throughput gain")
-    
-    st.markdown("---")
-    
-    st.subheader("Contact")
-    st.info("📧 info@summitlogic.com")
-    
-    st.markdown("---")
-    st.caption("© 2024 SummitLogic. All rights reserved.")
+# Sidebar removed: UI simplified to a single main column. Sidebar content intentionally omitted.
 
 
 def main():
