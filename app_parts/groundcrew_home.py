@@ -6,7 +6,7 @@ from .ground_alcohol import render as render_alcohol
 from .ground_inventory import render as render_inventory
 from .ground_training import render as render_training
 from .utils import safe_rerun
-
+# Render the Ground Crew home page
 
 def render_groundcrew(uri1=None, uri2=None, standalone=True):
     role_label = 'Ground Crew'
