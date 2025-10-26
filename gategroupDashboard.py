@@ -1,8 +1,15 @@
 import streamlit as st
 import pandas as pd
+import os
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import base64
+import json
+import hashlib
+import re
+from datetime import datetime
+import requests
 
 # Page configuration
 st.set_page_config(
@@ -12,430 +19,379 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS: force pure black background and golden text across the app
+# Gold color: rgb(166,151,109)
 st.markdown("""
     <style>
+    :root { --gold: rgb(166,151,109); }
+
+    /* Primary containers */
+    html, body, .stApp, .stApp>div, .block-container, .main, .reportview-container {
+        background: #000000 !important;
+        color: var(--gold) !important;
+    }
+
+    /* Sidebar and header/footer */
+    .stSidebar, .css-1d391kg, .css-1v3fvcr, header, footer {
+        background: #000000 !important;
+        color: var(--gold) !important;
+    }
+
+    /* Ensure any Streamlit generated containers use dark background */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"],
+    .css-18e3th9, .css-1d391kg {
+        background: #000000 !important;
+        color: var(--gold) !important;
+    }
+
+    /* Logo container centered */
+    .logo-center { text-align: center; padding: 10px 0; }
+    .logo-center img { display:block; margin: 0 auto; }
+
+    /* Metric card styling to match dark theme */
     .metric-card {
-        background-color: #f0f2f6;
+        background-color: rgba(255,255,255,0.02) !important;
         padding: 20px;
         border-radius: 10px;
-        border-left: 5px solid #1f77b4;
+        border-left: 5px solid var(--gold) !important;
+        color: var(--gold) !important;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+
+    /* Tabs and headers */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; padding-left: 20px; padding-right: 20px; color: var(--gold) !important; }
+    h1, h2, h3, h4, h5, h6, p, span, label, div, a {
+        color: var(--gold) !important;
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        padding-left: 20px;
-        padding-right: 20px;
+
+    /* Buttons and inputs: make text gold on dark */
+    .stButton>button, .stTextInput>div>div>input, .stTextArea>div>div>textarea {
+        color: var(--gold) !important;
+        background-color: rgba(255,255,255,0.03) !important;
+        border-color: rgba(255,255,255,0.08) !important;
     }
+
+    /* Prevent placeholder images from adding bright backgrounds */
+    img[alt="logo"] { background-color: transparent !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# Title and header
-st.title("🛫 GateFlow Dashboard - SummitLogic")
-st.markdown("### All-in-One Galley Operations Platform")
-st.markdown("---")
+# Login / Logo area
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'username' not in st.session_state:
+    st.session_state['username'] = ''
 
-# Create tabs
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Overview", 
-    "🍾 Alcohol Bottle Handling", 
-    "⚠️ Error Detection", 
-    "👥 Employee Efficiency"
-])
+# Temporary toggle to allow public access to FlightCrew Home without login
+PUBLIC_FLIGHTCREW_ACCESS = True
 
-# Sample data
-waste_reduction_data = pd.DataFrame({
-    'Month': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    'Before GateFlow': [32, 35, 33, 34, 36, 31],
-    'After GateFlow': [22, 24, 23, 21, 25, 20]
-})
+# Determine if this request should render the standalone FlightCrew page
+try:
+    _params = st.query_params
+except Exception:
+    _params = {}
+_page = None
+if _params:
+    v = _params.get('page')
+    if isinstance(v, list):
+        _page = v[0] if v else None
+    else:
+        _page = v
+IS_STANDALONE_FLIGHTCREW = (_page == 'flightcrew')
 
-bottle_disposition_data = pd.DataFrame({
-    'Action': ['Keep', 'Combine', 'Discard'],
-    'Percentage': [55, 25, 20]
-})
 
-error_reduction_data = pd.DataFrame({
-    'Week': ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'],
-    'Errors': [45, 38, 32, 28, 24, 22]
-})
 
-packing_accuracy_data = pd.DataFrame({
-    'Error Type': ['Product Swaps', 'Missing Items', 'Wrong Slots', 'Count Errors'],
-    'Before': [28, 22, 18, 15],
-    'After': [12, 9, 8, 6]
-})
+# Logo display (centered). The app will use `assets/logo.png` or `assets/logo.jpg` if present.
+col_l, col_c, col_r = st.columns([1, 2, 1])
+with col_c:
+    assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+    assets_logo_path = os.path.join(assets_dir, 'logo.png')
+    assets_logo_jpg = os.path.join(assets_dir, 'logo.jpg')
 
-training_progress_data = pd.DataFrame({
-    'Module': ['Bottle Handling', 'Cart Packing', 'Safety Protocols', 'QR Scanning', 'Photo Verification'],
-    'Completion %': [92, 88, 95, 85, 90]
-})
+    def _img_data_uri(path, mime='png'):
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+                b64 = base64.b64encode(data).decode('utf-8')
+                return f"data:image/{mime};base64,{b64}"
+        except Exception:
+            return None
 
-leaderboard_data = pd.DataFrame({
-    'Rank': [1, 2, 3, 4, 5],
-    'Employee': ['Maria Rodriguez', 'James Chen', 'Sarah Johnson', 'Ahmed Hassan', 'Emma Wilson'],
-    'Score': [2850, 2720, 2680, 2540, 2490],
-    'Badge': ['🏆', '🥈', '🥉', '⭐', '⭐']
-})
+    # Support two persistent logos: logo.png (primary) and logo2.png (secondary)
+    uri1 = None
+    uri2 = None
+    if os.path.exists(assets_logo_path):
+        uri1 = _img_data_uri(assets_logo_path, 'png')
+    elif os.path.exists(assets_logo_jpg):
+        uri1 = _img_data_uri(assets_logo_jpg, 'jpeg')
 
-# TAB 1: OVERVIEW
-with tab1:
-    # Hero section
-    st.markdown("""
-        <div style='background: linear-gradient(135deg, #1f77b4 0%, #2c5aa0 100%); 
-                    padding: 30px; border-radius: 10px; color: white; margin-bottom: 30px;'>
-            <h2>✈️ GateFlow by SummitLogic</h2>
-            <p style='font-size: 18px; margin-top: 10px;'>
-                Unifying alcohol bottle handling, real-time packing guidance with error detection, 
-                and employee training into a single role-aware experience for logistics and airport operations.
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # Key metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric(
-            label="Waste Reduction",
-            value="20-30%",
-            delta="25% improvement"
-        )
-    
-    with col2:
-        st.metric(
-            label="Error Reduction",
-            value="50%",
-            delta="Fewer packing errors"
-        )
-    
-    with col3:
-        st.metric(
-            label="Faster Ramp-Up",
-            value="30%",
-            delta="Training time saved"
-        )
-    
-    with col4:
-        st.metric(
-            label="Throughput Gain",
-            value="20%",
-            delta="Productivity increase"
-        )
-    
-    st.markdown("---")
-    
-    # What GateFlow Does
-    st.subheader("What GateFlow Does")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-            **🎯 Role-Aware Experience**
-            
-            Adapts immediately based on user role - ground operator, flight attendant, or supervisor. 
-            Each sees only relevant actions and data.
-        """)
-    
-    with col2:
-        st.markdown("""
-            **📦 Smart Bottle Management**
-            
-            QR-based tracking with automated recommendations for keep, combine, or discard decisions. 
-            Complete audit trail with photos and timestamps.
-        """)
-    
-    with col3:
-        st.markdown("""
-            **🎓 Gamified Training**
-            
-            Language-learning-style modules with instant feedback, leaderboards, and badges. 
-            New hire mode for personalized pacing.
-        """)
-    
-    st.markdown("---")
-    
-    # Mission statement
-    st.info("""
-        **SummitLogic Mission**: We deliver practical software that fits the rhythm of airport work, 
-        removes uncertainty from daily decisions, and turns scattered tasks into a smooth and measurable process.
-    """)
+    assets_logo2_path = os.path.join(assets_dir, 'logo2.png')
+    assets_logo2_jpg = os.path.join(assets_dir, 'logo2.jpg')
+    if os.path.exists(assets_logo2_path):
+        uri2 = _img_data_uri(assets_logo2_path, 'png')
+    elif os.path.exists(assets_logo2_jpg):
+        uri2 = _img_data_uri(assets_logo2_jpg, 'jpeg')
 
-# TAB 2: ALCOHOL BOTTLE HANDLING
-with tab2:
-    st.header("🍾 Alcohol Bottle Handling")
-    
-    st.markdown("""
-        Every bottle carries a QR that links to a record with its product data, batch, and policy for the airline. 
-        During service the flight attendant logs each time liquid is served with a fast interaction that updates 
-        the remaining volume.
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Waste Reduction Over Time")
-        fig_waste = go.Figure()
-        fig_waste.add_trace(go.Scatter(
-            x=waste_reduction_data['Month'],
-            y=waste_reduction_data['Before GateFlow'],
-            mode='lines+markers',
-            name='Before GateFlow',
-            line=dict(color='#ef4444', width=3),
-            marker=dict(size=8)
-        ))
-        fig_waste.add_trace(go.Scatter(
-            x=waste_reduction_data['Month'],
-            y=waste_reduction_data['After GateFlow'],
-            mode='lines+markers',
-            name='After GateFlow',
-            line=dict(color='#10b981', width=3),
-            marker=dict(size=8)
-        ))
-        fig_waste.update_layout(
-            yaxis_title="Waste Percentage (%)",
-            xaxis_title="Month",
-            height=400,
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig_waste, use_container_width=True)
-    
-    with col2:
-        st.subheader("Bottle Disposition Breakdown")
-        fig_disposition = px.pie(
-            bottle_disposition_data,
-            values='Percentage',
-            names='Action',
-            color='Action',
-            color_discrete_map={'Keep': '#10b981', 'Combine': '#3b82f6', 'Discard': '#ef4444'},
-            hole=0.4
-        )
-        fig_disposition.update_traces(textposition='inside', textinfo='percent+label')
-        fig_disposition.update_layout(height=400)
-        st.plotly_chart(fig_disposition, use_container_width=True)
-    
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Average Waste Reduction", "25%", delta="-7% from baseline")
-    
-    with col2:
-        st.metric("Audit Compliance", "100%", delta="Zero violations")
-    
-    with col3:
-        st.metric("Decision Time", "< 30 sec", delta="-45 sec average")
-    
-    st.markdown("---")
-    
-    st.subheader("How It Works")
-    st.markdown("""
-        1. **During Flight**: Flight attendants log usage with fast interactions
-        2. **Upon Return**: GateFlow calculates current amounts and applies airline rules
-        3. **Clear Instructions**: Operators receive specific actions (keep/combine/discard)
-        4. **Audit Trail**: Every decision stored with photo, timestamp, and operator ID
-    """)
+    if uri1 or uri2:
+        # show both logos side-by-side when available
+        imgs = "<div class='logo-center' style='display:flex; justify-content:center; gap:18px; align-items:center;'>"
+        if uri1:
+            imgs += f"<img src='{uri1}' width='320' alt='logo' style='max-height:120px; object-fit:contain;'/>"
+        if uri2:
+            imgs += f"<img src='{uri2}' width='320' alt='logo2' style='max-height:120px; object-fit:contain;'/>"
+        imgs += "</div>"
+        # Only show top logos if we are NOT rendering the standalone FlightCrew page
+        if not IS_STANDALONE_FLIGHTCREW:
+            st.markdown(imgs, unsafe_allow_html=True)
+    else:
+        if not IS_STANDALONE_FLIGHTCREW:
+            st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
 
-# TAB 3: ERROR DETECTION
-with tab3:
-    st.header("⚠️ Real-Time Error Detection")
-    
-    st.markdown("""
-        GateFlow guides the packing process with computer vision assistance and simple barcode sweeps when available. 
-        The app shows the correct product, the correct tray or cart slot, and the correct order of loading.
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Error Reduction Trend")
-        fig_errors = px.line(
-            error_reduction_data,
-            x='Week',
-            y='Errors',
-            markers=True,
-            line_shape='spline'
-        )
-        fig_errors.update_traces(
-            line=dict(color='#ef4444', width=3),
-            marker=dict(size=10)
-        )
-        fig_errors.update_layout(
-            yaxis_title="Number of Errors",
-            xaxis_title="Week",
-            height=400
-        )
-        st.plotly_chart(fig_errors, use_container_width=True)
-    
-    with col2:
-        st.subheader("Packing Accuracy: Before vs After")
-        fig_accuracy = go.Figure()
-        fig_accuracy.add_trace(go.Bar(
-            name='Before GateFlow',
-            x=packing_accuracy_data['Error Type'],
-            y=packing_accuracy_data['Before'],
-            marker_color='#ef4444'
-        ))
-        fig_accuracy.add_trace(go.Bar(
-            name='After GateFlow',
-            x=packing_accuracy_data['Error Type'],
-            y=packing_accuracy_data['After'],
-            marker_color='#10b981'
-        ))
-        fig_accuracy.update_layout(
-            barmode='group',
-            yaxis_title="Error Count",
-            height=400
-        )
-        st.plotly_chart(fig_accuracy, use_container_width=True)
-    
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Error Reduction", "50%", delta="Fewer packing mistakes")
-    
-    with col2:
-        st.metric("Rework Reduction", "45%", delta="Less post-seal fixes")
-    
-    with col3:
-        st.metric("First-Pass Yield", "95%", delta="+45% improvement")
-    
-    st.markdown("---")
-    
-    st.subheader("Detection Features")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-            **✅ Real-Time Guidance**
-            - Correct product identification
-            - Proper tray/cart slot placement
-            - Optimal loading sequence
-            - Flight-specific requirements
-        """)
-    
-    with col2:
-        st.markdown("""
-            **📸 Verification System**
-            - Top-down photo check before sealing
-            - Count reconciliation with plan
-            - Computer vision assistance
-            - Barcode scanning support
-        """)
-
-# TAB 4: EMPLOYEE EFFICIENCY
-with tab4:
-    st.header("👥 Employee Efficiency")
-    
-    st.markdown("""
-        GateFlow includes a training space that looks and feels like a language learning app. 
-        Staff complete short levels tied to the exact tasks they perform on the floor.
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Training Module Completion")
-        fig_training = px.bar(
-            training_progress_data,
-            x='Completion %',
-            y='Module',
-            orientation='h',
-            color='Completion %',
-            color_continuous_scale='blues',
-            text='Completion %'
-        )
-        fig_training.update_traces(texttemplate='%{text}%', textposition='outside')
-        fig_training.update_layout(
-            xaxis_title="Completion Percentage",
-            yaxis_title="",
-            height=400,
-            showlegend=False
-        )
-        st.plotly_chart(fig_training, use_container_width=True)
-    
-    with col2:
-        st.subheader("Ramp-Up Time Comparison")
-        fig_rampup = go.Figure()
-        fig_rampup.add_trace(go.Bar(
-            x=['Traditional Training', 'With GateFlow'],
-            y=[12, 8.4],
-            marker_color=['#ef4444', '#10b981'],
-            text=[12, 8.4],
-            texttemplate='%{text} weeks',
-            textposition='outside'
-        ))
-        fig_rampup.update_layout(
-            yaxis_title="Weeks to Full Productivity",
-            height=400,
-            showlegend=False
-        )
-        st.plotly_chart(fig_rampup, use_container_width=True)
-    
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Faster Ramp-Up", "30%", delta="3.6 weeks saved")
-    
-    with col2:
-        st.metric("Throughput Gain", "20%", delta="Higher first-pass yield")
-    
-    with col3:
-        st.metric("Employee Satisfaction", "4.7/5", delta="+0.9 points")
-    
-    st.markdown("---")
-    
-    st.subheader("🏆 Current Leaderboard")
-    
-    # Style the leaderboard
-    def style_leaderboard(row):
-        if row['Rank'] == 1:
-            return ['background-color: #ffd700'] * len(row)
-        elif row['Rank'] == 2:
-            return ['background-color: #c0c0c0'] * len(row)
-        elif row['Rank'] == 3:
-            return ['background-color: #cd7f32'] * len(row)
+# If the request is for the standalone FlightCrew page, render it here (using uri1/uri2) and stop further rendering
+if IS_STANDALONE_FLIGHTCREW:
+    # Build logo block for standalone page
+    if uri1 or uri2:
+        # Use a slightly different top margin depending on whether this is the standalone page
+        if not IS_STANDALONE_FLIGHTCREW:
+            top_margin = '-240px'  # pull logos slightly more up in the main app/tab
         else:
-            return [''] * len(row)
-    
-    styled_leaderboard = leaderboard_data.style.apply(style_leaderboard, axis=1)
-    st.dataframe(styled_leaderboard, use_container_width=True, hide_index=True)
-    
+            top_margin = '-110px'   # lift logos slightly more in standalone view
+        imgs = f"<div class='logo-center' style='display:flex; justify-content:center; gap:12px; align-items:center; margin-top:{top_margin};'>"
+        if uri1:
+            imgs += f"<img src='{uri1}' width='220' alt='logo' style='max-height:80px; object-fit:contain;'/>"
+        if uri2:
+            imgs += f"<img src='{uri2}' width='220' alt='logo2' style='max-height:80px; object-fit:contain;'/>"
+        imgs += "</div>"
+        # In standalone page we want to show the logos here as well
+        st.markdown(imgs, unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
+
+    # Top header: left = welcome box, right = local date/time
+    # Resolve full name from users.json if possible
+    full_name = None
+    username_key = st.session_state.get('username')
+    users_path = os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
+    if username_key and os.path.exists(users_path):
+        try:
+            with open(users_path, 'r', encoding='utf-8') as uf:
+                all_users = json.load(uf)
+                for u in all_users:
+                    if u.get('username') == username_key or u.get('email') == username_key:
+                        first = u.get('name', '').strip()
+                        last = u.get('last', '').strip()
+                        if first or last:
+                            full_name = f"{first} {last}".strip()
+                        break
+        except Exception:
+            full_name = None
+
+    if not full_name:
+        # fallback to username or placeholder
+        full_name = st.session_state.get('username') or '---'
+
+    # local date/time
+    now = datetime.now()
+    local_dt = now.strftime('%A, %d %B %Y — %H:%M')
+
+    # render header with welcome and clock
+    header_html = f"""
+    <div style='display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px;'>
+      <div style='background:rgba(255,255,255,0.02); padding:18px; border-radius:10px;'>
+        <h2 style='margin:0; color:var(--gold);'>Bienvenido de vuelta, {full_name}</h2>
+      </div>
+      <div style='background:rgba(255,255,255,0.02); padding:12px 16px; border-radius:8px; text-align:right;'>
+        <div style='font-weight:600; color:var(--gold);'>{local_dt}</div>
+      </div>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
     st.markdown("---")
-    
-    st.subheader("Training Features")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-            **📚 Learning System**
-            - Short, task-specific levels
-            - Images and quick checks
-            - Instant feedback
-            - Progress tracking
-        """)
-    
-    with col2:
-        st.markdown("""
-            **🎮 Engagement Tools**
-            - Friendly leaderboards
-            - Achievement badges
-            - New hire mode with slower pacing
-            - Recognition system
-        """)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.button("Ver manifiesto de vuelo")
+    with c2:
+        st.button("Reporte rápido de galley")
+    st.markdown("---")
+    st.markdown("[Volver a la app principal](./)")
+    st.stop()
+
+# Note: removed experimental_get_query_params usage per deprecation; FlightCrew UI is provided as an inline tab below.
+
+# Login form
+def _users_file_path():
+    return os.path.join(os.path.dirname(__file__), 'assets', 'users.json')
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def load_users():
+    path = _users_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_users(users_list):
+    path = _users_file_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(users_list, f, ensure_ascii=False, indent=2)
+
+def _valid_email(email: str) -> bool:
+    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
+
+
+if not st.session_state['logged_in']:
+    st.markdown("## Acceso")
+    tab_login, tab_register = st.tabs(["Iniciar sesión", "Registrarse"])
+
+    with tab_login:
+        login_id = st.text_input("Usuario o correo", value=st.session_state.get('username', ''), key='login_id')
+        login_pw = st.text_input("Contraseña", type='password', key='login_pw')
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            if st.button("Iniciar sesión", key='login_btn'):
+                users = load_users()
+                if users:
+                    found = None
+                    for u in users:
+                        if u.get('username') == login_id or u.get('email') == login_id:
+                            found = u
+                            break
+                    if not found:
+                        st.error("Usuario no registrado. Por favor regístrate.")
+                    else:
+                        if found.get('password') == hash_password(login_pw):
+                            st.session_state['logged_in'] = True
+                            st.session_state['username'] = found.get('username')
+                            st.session_state['role'] = found.get('role')
+                            st.success(f"Bienvenido, {st.session_state['username']}!")
+                            st.experimental_rerun()
+                        else:
+                            st.error("Credenciales inválidas.")
+                else:
+                    # no users registered yet - allow any non-empty for demo
+                    if login_id.strip() and login_pw.strip():
+                        st.session_state['logged_in'] = True
+                        st.session_state['username'] = login_id.strip()
+                        st.success(f"Bienvenido, {st.session_state['username']}!")
+                        st.experimental_rerun()
+                    else:
+                        st.error("Por favor ingresa usuario y contraseña.")
+
+    with tab_register:
+        reg_name = st.text_input("Nombre", key='reg_name')
+        reg_last = st.text_input("Apellidos", key='reg_last')
+        reg_email = st.text_input("Correo electrónico", key='reg_email')
+        reg_username = st.text_input("Usuario (para inicio de sesión)", key='reg_username')
+        # Use role labels without spaces as requested
+        reg_role = st.selectbox("Rol", ["FlightCrew", "GroundCrew"], key='reg_role')
+        reg_pw = st.text_input("Contraseña", type='password', key='reg_pw')
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            if st.button("Registrarse", key='register_btn'):
+                # basic validation
+                if not (reg_name.strip() and reg_last.strip() and reg_email.strip() and reg_username.strip() and reg_pw.strip()):
+                    st.error("Por favor completa todos los campos.")
+                elif not _valid_email(reg_email.strip()):
+                    st.error("Ingresa un correo válido.")
+                else:
+                    users = load_users()
+                    # check duplicates
+                    for u in users:
+                        if u.get('username') == reg_username.strip():
+                            st.error("El usuario ya existe. Elige otro usuario.")
+                            break
+                        if u.get('email') == reg_email.strip():
+                            st.error("Ya existe una cuenta con ese correo.")
+                            break
+                    else:
+                                    # Try to register via remote API first
+                                    api_url = "https://summitlogicapidb-production.up.railway.app/api/auth/register"
+                                    # The UI shows roles without spaces (FlightCrew/GroundCrew).
+                                    # The server expects the human-readable values with a space.
+                                    role_send_map = {
+                                        "FlightCrew": "Flight Crew",
+                                        "GroundCrew": "Ground Crew"
+                                    }
+                                    payload = {
+                                        "firstName": reg_name.strip(),
+                                        "lastName": reg_last.strip(),
+                                        "email": reg_email.strip(),
+                                        "username": reg_username.strip(),
+                                        # translate to the server-expected form
+                                        "role": role_send_map.get(reg_role, reg_role),
+                                        "password": reg_pw.strip()
+                                    }
+                                    try:
+                                        resp = requests.post(api_url, json=payload, timeout=10)
+                                        if 200 <= resp.status_code < 300:
+                                            st.success('Registro exitoso en el servidor. Ahora estás logueado.')
+                                            st.session_state['logged_in'] = True
+                                            st.session_state['username'] = reg_username.strip()
+                                            st.session_state['role'] = reg_role
+                                            # Optionally persist locally for offline fallback
+                                            try:
+                                                new_user = {
+                                                    'username': reg_username.strip(),
+                                                    'name': reg_name.strip(),
+                                                    'last': reg_last.strip(),
+                                                    'email': reg_email.strip(),
+                                                    'role': reg_role,
+                                                    'password': hash_password(reg_pw.strip())
+                                                }
+                                                users.append(new_user)
+                                                save_users(users)
+                                            except Exception:
+                                                pass
+                                            st.experimental_rerun()
+                                        else:
+                                            # try to extract message from server
+                                            try:
+                                                err = resp.json().get('message') or resp.text
+                                            except Exception:
+                                                err = resp.text
+                                            st.error(f"Registro falló en el servidor: {err}")
+                                    except Exception as e:
+                                        st.warning(f"No se pudo conectar con el servidor de registro: {e}. Intentando guardado local...")
+                                        # fallback to local registration
+                                        new_user = {
+                                            'username': reg_username.strip(),
+                                            'name': reg_name.strip(),
+                                            'last': reg_last.strip(),
+                                            'email': reg_email.strip(),
+                                            'role': reg_role,
+                                            'password': hash_password(reg_pw.strip())
+                                        }
+                                        users.append(new_user)
+                                        save_users(users)
+                                        st.success('Registro local exitoso. Ahora estás logueado.')
+                                        st.session_state['logged_in'] = True
+                                        st.session_state['username'] = new_user['username']
+                                        st.session_state['role'] = new_user['role']
+                                        st.experimental_rerun()
+
+    # stop further rendering until logged in (allow public FlightCrew if configured)
+    if not st.session_state['logged_in'] and not PUBLIC_FLIGHTCREW_ACCESS:
+        st.stop()
+
+# The main app shows only the access UI (Iniciar sesión / Registrarse). The standalone FlightCrew
+# page is still available at ?page=flightcrew but we remove the in-app FlightCrew tab and card.
 
 # Sidebar
 with st.sidebar:
+    # Logout button
+    if st.session_state.get('logged_in'):
+        if st.button("Cerrar sesión"):
+            st.session_state['logged_in'] = False
+            st.session_state['username'] = ''
+            st.experimental_rerun()
+
     st.image("https://via.placeholder.com/200x80/1f77b4/ffffff?text=SummitLogic", use_column_width=True)
     st.markdown("---")
     

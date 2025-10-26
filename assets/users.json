@@ -1,0 +1,34 @@
+[
+  {
+    "username": "test02",
+    "name": "test02",
+    "last": "test",
+    "email": "test@test.com",
+    "role": "FlightCrew",
+    "password": "ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae"
+  },
+  {
+    "username": "test02",
+    "name": "test02",
+    "last": "test",
+    "email": "test@test.com",
+    "role": "FlightCrew",
+    "password": "ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae"
+  },
+  {
+    "username": "test3",
+    "name": "test3",
+    "last": "test33",
+    "email": "test3@test.mx",
+    "role": "GroundCrew",
+    "password": "ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae"
+  },
+  {
+    "username": "test3",
+    "name": "test3",
+    "last": "test33",
+    "email": "test3@test.mx",
+    "role": "GroundCrew",
+    "password": "ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae"
+  }
+]
