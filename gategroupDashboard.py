@@ -298,7 +298,6 @@ if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
             else:
                 render_groundcrew(uri1, uri2)
     else:
-<<<<<<< HEAD
         # No sub requested: render the crew home
         if IS_STANDALONE_FLIGHTCREW:
             render_flightcrew(uri1, uri2)
@@ -311,8 +310,6 @@ if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
     except Exception:
         # If st.stop() is not available for some Streamlit version, just return
         pass
-=======
-        st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
 
     # Top header: left = welcome box, right = local date/time
     # Resolve full name from users.json if possible
@@ -362,7 +359,6 @@ if IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW:
     st.markdown("---")
     st.markdown("[Volver a la app principal](./)")
     st.stop()
->>>>>>> 822a55df5934cef6daa169ff82b1385e6cfa0b3a
 
 # Note: removed experimental_get_query_params usage per deprecation; FlightCrew UI is provided as an inline tab below.
 
