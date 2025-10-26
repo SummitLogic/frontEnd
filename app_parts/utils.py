@@ -140,3 +140,39 @@ def restore_session_state():
                     st.session_state['logged_in'] = True
     except Exception:
         pass
+
+
+def navigate(page: str = None, sub: str = None, extra: dict = None):
+    """Navigate within the app by setting query params and triggering a rerun.
+
+    Uses Streamlit's experimental_set_query_params when available. Falls back
+    to setting session_state keys so the main router can pick them up.
+    """
+    try:
+        params = {}
+        if page:
+            params['page'] = page
+        if sub:
+            params['sub'] = sub
+        if extra and isinstance(extra, dict):
+            params.update(extra)
+        if params:
+            try:
+                st.experimental_set_query_params(**params)
+            except Exception:
+                # Fallback: store intent in session_state
+                st.session_state['goto_page'] = page
+                if sub:
+                    st.session_state['goto_sub'] = sub
+        else:
+            # clear params
+            try:
+                st.experimental_set_query_params()
+            except Exception:
+                for k in ('goto_page', 'goto_sub'):
+                    if k in st.session_state:
+                        del st.session_state[k]
+        # trigger a safe rerun
+        safe_rerun()
+    except Exception:
+        pass
