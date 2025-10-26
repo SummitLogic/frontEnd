@@ -82,6 +82,15 @@ def save_session(session_obj: dict):
     session_obj should be JSON-serializable. This is used to persist the
     logged-in user/token across full page reloads during development.
     """
+    # Don't write an empty/null session blob. Use clear_session() to remove the
+    # on-disk session when logging out. This prevents accidental overwrites
+    # where a None/empty user would replace a valid persisted session.
+    if not session_obj or not isinstance(session_obj, dict):
+        return
+    user = session_obj.get('user')
+    # Only persist when we have a non-empty user object
+    if not user:
+        return
     path = _session_file_path()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -107,5 +116,27 @@ def clear_session():
     try:
         if os.path.exists(path):
             os.remove(path)
+    except Exception:
+        pass
+
+
+def restore_session_state():
+    """Ensure st.session_state contains user/token/logged_in by loading the
+    persisted session file if present. Safe to call repeatedly.
+    """
+    try:
+        # Only attempt if session not already populated
+        if not st.session_state.get('logged_in') or not st.session_state.get('user'):
+            sess = load_session()
+            if sess and isinstance(sess, dict):
+                user = sess.get('user')
+                token = sess.get('token')
+                if user:
+                    st.session_state['user'] = user
+                    st.session_state['username'] = user.get('username') or user.get('email') or st.session_state.get('username')
+                    st.session_state['role'] = user.get('role') or st.session_state.get('role')
+                    if token:
+                        st.session_state['token'] = token
+                    st.session_state['logged_in'] = True
     except Exception:
         pass

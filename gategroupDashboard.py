@@ -43,19 +43,25 @@ for _k, _v in {
 
 # Try to restore persisted session (local fallback) if available and session not already logged in
 try:
-    from app_parts.utils import load_session
-    if not st.session_state.get('logged_in'):
-        sess = load_session()
-        if sess and isinstance(sess, dict):
-            user = sess.get('user')
-            token = sess.get('token')
-            if user:
-                st.session_state['user'] = user
-                st.session_state['username'] = user.get('username') or user.get('email') or st.session_state.get('username')
-                st.session_state['role'] = user.get('role') or st.session_state.get('role')
-                if token:
-                    st.session_state['token'] = token
-                st.session_state['logged_in'] = True
+    # Use the centralized restore helper which will rehydrate
+    # st.session_state from the persisted session.json if present.
+    from app_parts.utils import restore_session_state, save_session
+    try:
+        restore_session_state()
+    except Exception:
+        pass
+
+    # Ensure persisted session on disk matches any logged-in session (only
+    # saved if a valid user object is present). save_session will noop when
+    # session is empty.
+    try:
+        if st.session_state.get('logged_in') and st.session_state.get('user'):
+            try:
+                save_session({'user': st.session_state.get('user'), 'token': st.session_state.get('token')})
+            except Exception:
+                pass
+    except Exception:
+        pass
 except Exception:
     pass
 
@@ -398,6 +404,24 @@ if not st.session_state['logged_in']:
     # stop further rendering until logged in (allow public FlightCrew if configured)
     if not st.session_state['logged_in'] and not PUBLIC_FLIGHTCREW_ACCESS:
         st.stop()
+
+# If the user is logged in and we're not in a standalone (?page=...) view,
+# render the role-specific home inline with tabs so the user stays in the same page.
+if st.session_state.get('logged_in') and not IS_STANDALONE:
+    role_val = (st.session_state.get('role') or '').lower()
+    try:
+        if 'flight' in role_val:
+            render_flightcrew(uri1, uri2, standalone=False)
+        else:
+            render_groundcrew(uri1, uri2, standalone=False)
+    except Exception:
+        # If any error rendering inline, fall back to access UI
+        render_login(uri1=uri1, uri2=uri2, is_standalone=IS_STANDALONE, public_flight_access=PUBLIC_FLIGHTCREW_ACCESS)
+    # Stop so the rest of the access UI doesn't render below
+    try:
+        st.stop()
+    except Exception:
+        pass
 
 # The main app shows only the access UI (Iniciar sesión / Registrarse). The standalone FlightCrew
 # page is still available at ?page=flightcrew but we remove the in-app FlightCrew tab and card.

@@ -8,8 +8,15 @@ from .flight_training import render as render_training
 from .utils import safe_rerun
 
 
-def render_flightcrew(uri1=None, uri2=None):
+def render_flightcrew(uri1=None, uri2=None, standalone=True):
     role_label = 'Flight Crew'
+
+    # Attempt to restore session_state from the persisted session file.
+    try:
+        from .utils import restore_session_state
+        restore_session_state()
+    except Exception:
+        pass
 
     # Logos
     if uri1 or uri2:
@@ -30,14 +37,18 @@ def render_flightcrew(uri1=None, uri2=None):
     sess_user = st.session_state.get('user')
     username_key = st.session_state.get('username')
     users_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'users.json')
-    # If we have a session user from the API, use that first
+    # If we have a session user from the API, use that first. Accept multiple key names
     if sess_user:
-        first = (sess_user.get('name') or '').strip()
-        last = (sess_user.get('last') or '').strip()
+        # possible first name keys returned by different backends
+        first = (sess_user.get('name') or sess_user.get('firstName') or sess_user.get('first') or sess_user.get('givenName') or '').strip()
+        last = (sess_user.get('last') or sess_user.get('lastName') or sess_user.get('surname') or sess_user.get('familyName') or '').strip()
         if first or last:
             full_name = f"{first} {last}".strip()
         else:
-            full_name = sess_user.get('username') or sess_user.get('email')
+            # fallback to displayName, fullName, username or email
+            full_name = (sess_user.get('displayName') or sess_user.get('fullName') or sess_user.get('username') or sess_user.get('email'))
+            if full_name:
+                full_name = str(full_name).strip()
     elif username_key and os.path.exists(users_path):
         try:
             with open(users_path, 'r', encoding='utf-8') as uf:
@@ -76,20 +87,32 @@ def render_flightcrew(uri1=None, uri2=None):
     st.markdown(header_html, unsafe_allow_html=True)
     st.markdown("---")
 
-    # Show links that navigate to standalone pages for each subpage
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("""
-            <a href='?page=flightcrew&sub=alcohol' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Alcohol</a>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-            <a href='?page=flightcrew&sub=inventario' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Inventario</a>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-            <a href='?page=flightcrew&sub=entrenamiento' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Entrenamiento</a>
-        """, unsafe_allow_html=True)
+    if standalone:
+        # Show links that navigate to standalone pages for each subpage
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("""
+                <a href='?page=flightcrew&sub=alcohol' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Alcohol</a>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown("""
+                <a href='?page=flightcrew&sub=inventario' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Inventario</a>
+            """, unsafe_allow_html=True)
+        with col3:
+            st.markdown("""
+                <a href='?page=flightcrew&sub=entrenamiento' style='display:inline-block;padding:12px 18px;background:rgba(255,255,255,0.03);border-radius:8px;color:var(--gold);text-decoration:none;'>Entrenamiento</a>
+            """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("[Volver a la app principal](./)")
+        st.markdown("---")
+        st.markdown("[Volver a la app principal](./)")
+    else:
+        # Render three tab-like links that navigate to standalone pages in the same tab.
+        st.markdown("""
+        <div style='display:flex; gap:8px;'>
+          <a href='?page=flightcrew&sub=alcohol' role='tab' style='padding:10px 16px; background:rgba(255,255,255,0.03); border-radius:8px; color:var(--gold); text-decoration:none; font-weight:600;'>Alcohol</a>
+          <a href='?page=flightcrew&sub=inventario' role='tab' style='padding:10px 16px; background:rgba(255,255,255,0.03); border-radius:8px; color:var(--gold); text-decoration:none; font-weight:600;'>Inventario</a>
+          <a href='?page=flightcrew&sub=entrenamiento' role='tab' style='padding:10px 16px; background:rgba(255,255,255,0.03); border-radius:8px; color:var(--gold); text-decoration:none; font-weight:600;'>Entrenamiento</a>
+        </div>
+        <hr />
+        <p style='color:var(--gold); margin-top:12px;'>Haz click en cualquiera de las pestañas para abrir la vista completa de esa sección.</p>
+        """, unsafe_allow_html=True)
