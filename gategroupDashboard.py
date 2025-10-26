@@ -169,13 +169,14 @@ except Exception:
 # - clear query params and rerun so the app returns to the initial access screen
 try:
     if _params and ('logout' in _params or _params.get('logout')):
+        # Step 1: Clear the persisted session file
         try:
             from app_parts.utils import clear_session
             clear_session()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed to clear session file: {e}")
 
-        # Safely remove all session_state keys to fully reset the app state
+        # Step 2: Clear all session_state keys to fully reset the app state
         try:
             keys = list(st.session_state.keys())
             for k in keys:
@@ -186,27 +187,41 @@ try:
                 if _k in st.session_state:
                     del st.session_state[_k]
 
+        # Step 3: Clear URL params to remove ?logout=1
         try:
-            # clear URL params
-            st.experimental_set_query_params()
+            st.query_params.clear()
+        except Exception:
+            # Fallback for older Streamlit versions
+            try:
+                st.experimental_set_query_params()
+            except Exception:
+                pass
+
+        # Step 4: Display a success message before rerunning
+        st.success("Sesión cerrada exitosamente. Redirigiendo...")
+        
+        # Step 5: Force a rerun to reload the app at the base URL
+        try:
+            # Use a small delay to show the success message
+            time.sleep(0.5)
         except Exception:
             pass
-
-        # Force a rerun so the app initializes as if freshly started
+        
         try:
-            if hasattr(st, 'experimental_rerun'):
+            if hasattr(st, 'rerun'):
+                st.rerun()
+            elif hasattr(st, 'experimental_rerun'):
                 st.experimental_rerun()
+            else:
+                st.stop()
         except Exception:
             try:
                 st.stop()
             except Exception:
                 pass
-        try:
-            st.stop()
-        except Exception:
-            pass
-except Exception:
-    pass
+except Exception as e:
+    print(f"Logout error: {e}")
+
 _page = None
 if _params:
     v = _params.get('page')

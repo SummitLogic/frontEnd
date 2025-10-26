@@ -25,57 +25,66 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                     if submit_login:
                         login_id = st.session_state.get('form_login_id', '').strip()
                         login_pw = st.session_state.get('form_login_pw', '').strip()
-                        # Remote login attempt
+                        
+                        if not login_id or not login_pw:
+                            st.error("Por favor ingresa usuario y contraseña.")
+                            st.stop()
+                        
+                        # Try remote login first
                         login_api = "https://summitlogicapidb-production.up.railway.app/api/auth/login"
                         remote_succeeded = False
-                        if login_id and login_pw:
-                            try:
-                                payload = {"email": login_id, "password": login_pw}
-                                resp = requests.post(login_api, json=payload, timeout=8)
-                                if 200 <= resp.status_code < 300:
-                                    data = resp.json() if resp.text else {}
-                                    token = data.get('token') or data.get('accessToken')
-                                    user = data.get('user') or data.get('data') or {}
-                                    server_role = user.get('role') if isinstance(user, dict) else None
-                                    target_page = 'groundcrew'
-                                    if server_role and 'flight' in server_role.lower():
-                                        target_page = 'flightcrew'
+                        
+                        try:
+                            payload = {"email": login_id, "password": login_pw}
+                            resp = requests.post(login_api, json=payload, timeout=8)
+                            
+                            if 200 <= resp.status_code < 300:
+                                data = resp.json() if resp.text else {}
+                                token = data.get('token') or data.get('accessToken')
+                                user = data.get('user') or data.get('data') or {}
+                                server_role = user.get('role') if isinstance(user, dict) else None
+                                target_page = 'groundcrew'
+                                if server_role and 'flight' in server_role.lower():
+                                    target_page = 'flightcrew'
 
-                                    # FIX: Set ALL session_state values BEFORE calling save_session
-                                    st.session_state['logged_in'] = True
-                                    st.session_state['username'] = user.get('username') or user.get('email') or login_id
-                                    st.session_state['role'] = server_role or ''
-                                    st.session_state['token'] = token
-                                    st.session_state['user'] = user  # This must be set BEFORE save_session
-                                    
-                                    # Now persist session locally so navigating won't lose it
-                                    try:
-                                        save_session({
-                                            'user': st.session_state['user'],
-                                            'token': st.session_state['token'],
-                                            'logged_in': True,
-                                            'username': st.session_state['username'],
-                                            'role': st.session_state['role']
-                                        })
-                                    except Exception as e:
-                                        print(f"Failed to save session: {e}")
-                                    
-                                    st.success(f"Bienvenido, {st.session_state['username']}!")
-                                    try:
-                                        st.experimental_set_query_params(page=target_page)
-                                    except Exception:
-                                        st.session_state['goto_page'] = target_page
-                                    safe_rerun()
-                                    remote_succeeded = True
-                                else:
-                                    try:
-                                        msg = resp.json().get('message') or resp.text
-                                    except Exception:
-                                        msg = resp.text
-                                    st.warning(f"Autenticación remota falló: {msg}")
-                            except Exception as e:
-                                st.info(f"No se pudo conectar con el servidor de autenticación: {e}. Intentando autenticación local...")
-
+                                # Set ALL session_state values
+                                st.session_state['logged_in'] = True
+                                st.session_state['username'] = user.get('username') or user.get('email') or login_id
+                                st.session_state['role'] = server_role or ''
+                                st.session_state['token'] = token
+                                st.session_state['user'] = user
+                                
+                                # Persist session
+                                try:
+                                    save_session({
+                                        'user': st.session_state['user'],
+                                        'token': st.session_state['token'],
+                                        'logged_in': True,
+                                        'username': st.session_state['username'],
+                                        'role': st.session_state['role']
+                                    })
+                                except Exception as e:
+                                    print(f"Failed to save session: {e}")
+                                
+                                # Set query params and rerun
+                                try:
+                                    st.experimental_set_query_params(page=target_page)
+                                except Exception:
+                                    st.session_state['goto_page'] = target_page
+                                
+                                # Mark success and exit
+                                remote_succeeded = True
+                                safe_rerun()
+                                st.stop()  # Prevent further execution
+                            else:
+                                # Remote auth failed - will try local
+                                remote_succeeded = False
+                        except Exception as e:
+                            # Connection failed - will try local
+                            print(f"Remote auth connection error: {e}")
+                            remote_succeeded = False
+                        
+                        # Only try local auth if remote didn't succeed
                         if not remote_succeeded:
                             users = load_users()
                             if users:
@@ -84,75 +93,71 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                                     if u.get('username') == login_id or u.get('email') == login_id:
                                         found = u
                                         break
+                                
                                 if not found:
                                     st.error("Usuario no registrado. Por favor regístrate.")
-                                else:
-                                    if found.get('password') == hash_password(login_pw):
-                                        # FIX: Set ALL session_state values BEFORE calling save_session
-                                        st.session_state['logged_in'] = True
-                                        st.session_state['username'] = found.get('username')
-                                        st.session_state['role'] = found.get('role')
-                                        st.session_state['user'] = {
-                                            'username': found.get('username'),
-                                            'email': found.get('email'),
-                                            'name': found.get('name'),
-                                            'last': found.get('last'),
-                                            'role': found.get('role')
-                                        }
-                                        
-                                        # Now persist the session
-                                        try:
-                                            save_session({
-                                                'user': st.session_state['user'],
-                                                'token': st.session_state.get('token'),
-                                                'logged_in': True,
-                                                'username': st.session_state['username'],
-                                                'role': st.session_state['role']
-                                            })
-                                        except Exception as e:
-                                            print(f"Failed to save session: {e}")
-                                        
-                                        st.success(f"Bienvenido, {st.session_state['username']}!")
-                                        
-                                        if found.get('role') and 'flight' in found.get('role').lower():
-                                            try:
-                                                st.experimental_set_query_params(page='flightcrew')
-                                            except Exception:
-                                                st.session_state['goto_page'] = 'flightcrew'
-                                        else:
-                                            try:
-                                                st.experimental_set_query_params(page='groundcrew')
-                                            except Exception:
-                                                st.session_state['goto_page'] = 'groundcrew'
-                                        safe_rerun()
-                                    else:
-                                        st.error("Credenciales inválidas.")
-                            else:
-                                # no users registered yet - allow any non-empty for demo
-                                if login_id and login_pw:
+                                elif found.get('password') == hash_password(login_pw):
+                                    # Local auth successful
                                     st.session_state['logged_in'] = True
-                                    st.session_state['username'] = login_id
+                                    st.session_state['username'] = found.get('username')
+                                    st.session_state['role'] = found.get('role')
                                     st.session_state['user'] = {
-                                        'username': login_id,
-                                        'email': login_id,
-                                        'name': login_id,
-                                        'last': '',
-                                        'role': 'GroundCrew'
+                                        'username': found.get('username'),
+                                        'email': found.get('email'),
+                                        'name': found.get('name'),
+                                        'last': found.get('last'),
+                                        'role': found.get('role')
                                     }
+                                    
+                                    # Persist the session
                                     try:
                                         save_session({
                                             'user': st.session_state['user'],
-                                            'token': None,
+                                            'token': st.session_state.get('token'),
                                             'logged_in': True,
                                             'username': st.session_state['username'],
-                                            'role': st.session_state.get('role', 'GroundCrew')
+                                            'role': st.session_state['role']
                                         })
                                     except Exception as e:
                                         print(f"Failed to save session: {e}")
-                                    st.success(f"Bienvenido, {st.session_state['username']}!")
+                                    
+                                    if found.get('role') and 'flight' in found.get('role').lower():
+                                        try:
+                                            st.experimental_set_query_params(page='flightcrew')
+                                        except Exception:
+                                            st.session_state['goto_page'] = 'flightcrew'
+                                    else:
+                                        try:
+                                            st.experimental_set_query_params(page='groundcrew')
+                                        except Exception:
+                                            st.session_state['goto_page'] = 'groundcrew'
                                     safe_rerun()
+                                    st.stop()
                                 else:
-                                    st.error("Por favor ingresa usuario y contraseña.")
+                                    st.error("Credenciales inválidas.")
+                            else:
+                                # No users in local DB - demo mode
+                                st.session_state['logged_in'] = True
+                                st.session_state['username'] = login_id
+                                st.session_state['user'] = {
+                                    'username': login_id,
+                                    'email': login_id,
+                                    'name': login_id,
+                                    'last': '',
+                                    'role': 'GroundCrew'
+                                }
+                                try:
+                                    save_session({
+                                        'user': st.session_state['user'],
+                                        'token': None,
+                                        'logged_in': True,
+                                        'username': st.session_state['username'],
+                                        'role': st.session_state.get('role', 'GroundCrew')
+                                    })
+                                except Exception as e:
+                                    print(f"Failed to save session: {e}")
+                                safe_rerun()
+                                st.stop()
 
         with tab_register:
             lcol2, mcol2, rcol2 = st.columns([1, 2, 1])
@@ -191,7 +196,7 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                             try:
                                 resp = requests.post(api_url, json=payload, timeout=10)
                                 if 200 <= resp.status_code < 300:
-                                    # FIX: Set ALL session_state values BEFORE calling save_session
+                                    # Set ALL session_state values
                                     st.session_state['logged_in'] = True
                                     st.session_state['username'] = reg_username.strip()
                                     st.session_state['role'] = reg_role
@@ -203,7 +208,7 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                                         'role': reg_role
                                     }
                                     
-                                    # Now persist the session
+                                    # Persist the session
                                     try:
                                         save_session({
                                             'user': st.session_state['user'],
@@ -230,7 +235,7 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                                     except Exception:
                                         pass
                                     
-                                    st.success('Registro exitoso en el servidor. Ahora estás logueado.')
+                                    st.success('Registro exitoso en el servidor.')
                                     safe_rerun()
                                 else:
                                     try:
@@ -241,7 +246,7 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                             except Exception as e:
                                 st.warning(f"No se pudo conectar con el servidor de registro: {e}. Intentando guardado local...")
                                 
-                                # FIX: Set ALL session_state values BEFORE calling save_session
+                                # Set ALL session_state values
                                 new_user = {
                                     'username': reg_username.strip(),
                                     'name': reg_name.strip(),
@@ -264,7 +269,7 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                                     'role': new_user.get('role')
                                 }
                                 
-                                # Now persist the session
+                                # Persist the session
                                 try:
                                     save_session({
                                         'user': st.session_state['user'],
@@ -276,5 +281,5 @@ def render_login(uri1=None, uri2=None, is_standalone=False, public_flight_access
                                 except Exception as e:
                                     print(f"Failed to save session: {e}")
                                 
-                                st.success('Registro local exitoso. Ahora estás logueado.')
+                                st.success('Registro local exitoso.')
                                 safe_rerun()

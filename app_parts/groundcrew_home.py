@@ -19,7 +19,9 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
     except Exception:
         pass
 
-    if uri1 or uri2:
+# Only show logos if in standalone mode (when accessed via ?page=groundcrew)
+    # When rendering inline (standalone=False), the main dashboard already shows logos
+    if standalone and (uri1 or uri2):
         top_margin = '-110px'
         imgs = f"<div class='logo-center' style='display:flex; justify-content:center; gap:28px; align-items:center; margin-top:{top_margin};'>"
         if uri1:
@@ -28,7 +30,8 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
             imgs += f"<img src='{uri2}' width='620' alt='logo2' style='max-height:190px; object-fit:contain; margin-top:28px;'/>"
         imgs += "</div>"
         st.markdown(imgs, unsafe_allow_html=True)
-    else:
+    elif standalone:
+        # Fallback placeholder only in standalone mode
         st.markdown("<div class='logo-center'><img src='https://via.placeholder.com/400x80/1f77b4/ffffff?text=SummitLogic' width='400' alt='logo' /></div>", unsafe_allow_html=True)
 
     # Resolve full name from users.json if possible
