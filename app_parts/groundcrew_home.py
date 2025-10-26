@@ -1,12 +1,13 @@
 import streamlit as st
 import os
 import json
+import requests
 from datetime import datetime
 from .ground_alcohol import render as render_alcohol
 from .ground_inventory import render as render_inventory
 from .ground_training import render as render_training
 from .utils import safe_rerun
-# Render the Ground Crew home page
+
 
 def render_groundcrew(uri1=None, uri2=None, standalone=True):
     role_label = 'Ground Crew'
@@ -95,9 +96,9 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
         </div>
         """, unsafe_allow_html=True)
         
-        # Fetch upcoming flights from API/DB (placeholder for now)
-        # TODO: Replace with actual API call to fetch flights
-        upcoming_flights = get_upcoming_flights()
+        # Fetch upcoming flights from API
+        token = st.session_state.get('token')
+        upcoming_flights = get_upcoming_flights(token)
         
         if upcoming_flights:
             for flight in upcoming_flights:
@@ -106,7 +107,7 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
                     <div style='color:var(--gold); font-weight:600; margin-bottom:4px;'>{flight.get('time', 'N/A')}</div>
                     <div style='color:var(--gold); font-size:14px;'>{flight.get('departure_city', 'N/A')} → {flight.get('destination_city', 'N/A')}</div>
                     <div style='color:var(--gold); font-size:12px; margin-top:4px;'>Tiempo de vuelo: {flight.get('flight_time', 'N/A')}</div>
-                    <div style='color:var(--gold); font-size:12px;'>Estado: {flight.get('status', 'N/A')}</div>
+                    <div style='color:var(--gold); font-size:12px;'>Vuelo: {flight.get('status', 'N/A')}</div>
                 </div>
                 """
                 st.markdown(flight_html, unsafe_allow_html=True)
@@ -116,8 +117,6 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
                 <p style='color:var(--gold); margin:0; font-size:14px;'>No hay vuelos próximos</p>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Removed "Agregar vuelo" button as requested
 
     with col_main:
         # Tab navigation
@@ -198,30 +197,185 @@ def render_groundcrew(uri1=None, uri2=None, standalone=True):
         st.markdown("<a href='./' style='color:var(--gold); text-decoration:none;'>Volver a la app principal</a>", unsafe_allow_html=True)
 
 
-def get_upcoming_flights():
+def get_upcoming_flights(token=None):
     """
     Fetch upcoming flights from API/Database
-    TODO: Replace with actual API call
-    Returns list of flight dictionaries
+    Returns list of flight dictionaries with real data from the flights table
     """
-    # Placeholder data - replace with actual API call
-    # Example structure of what the API should return:
-    return [
-        {
-            'time': '14:30',
-            'departure_city': 'Ciudad de México',
-            'destination_city': 'Cancún',
-            'flight_time': '2h 15m',
-            'status': 'A tiempo'
-        },
-        {
-            'time': '16:45',
-            'departure_city': 'Monterrey',
-            'destination_city': 'Guadalajara',
-            'flight_time': '1h 30m',
-            'status': 'Confirmado'
+    api_url = "https://summitlogicapidb-production.up.railway.app/api/flights"
+    
+    try:
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         }
-    ]
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
+        
+        print(f"[DEBUG] Fetching flights from: {api_url}")
+        print(f"[DEBUG] Headers: {headers}")
+        
+        # Fetch flights from API
+        response = requests.get(api_url, headers=headers, timeout=10)
+        
+        print(f"[DEBUG] Response status: {response.status_code}")
+        print(f"[DEBUG] Response headers: {dict(response.headers)}")
+        
+        if response.status_code == 200:
+            # Try to parse JSON
+            try:
+                content_type = response.headers.get('Content-Type', '')
+                if 'application/json' not in content_type:
+                    print(f"[WARNING] Unexpected content type: {content_type}")
+                
+                flights_data = response.json()
+                print(f"[DEBUG] Parsed JSON successfully")
+                print(f"[DEBUG] Data type: {type(flights_data)}")
+                
+                # Handle different response structures
+                if isinstance(flights_data, dict):
+                    # Check for common wrapper keys
+                    flights_list = (
+                        flights_data.get('flights') or 
+                        flights_data.get('data') or 
+                        flights_data.get('results') or
+                        []
+                    )
+                    if not flights_list:
+                        # If no wrapper key found, maybe the dict IS a single flight
+                        if 'id' in flights_data or 'flight_number' in flights_data:
+                            flights_list = [flights_data]
+                        else:
+                            print(f"[WARNING] Could not find flights in response. Keys: {flights_data.keys()}")
+                            flights_list = []
+                elif isinstance(flights_data, list):
+                    flights_list = flights_data
+                else:
+                    print(f"[ERROR] Unexpected data type: {type(flights_data)}")
+                    return []
+                
+                print(f"[DEBUG] Found {len(flights_list)} flights")
+                if flights_list:
+                    print(f"[DEBUG] First flight sample: {flights_list[0]}")
+                
+                # Parse and format the flight data
+                formatted_flights = []
+                for idx, flight in enumerate(flights_list):
+                    if not isinstance(flight, dict):
+                        print(f"[WARNING] Flight #{idx} is not a dict: {type(flight)}")
+                        continue
+                    
+                    print(f"[DEBUG] Processing flight #{idx}: {flight.keys()}")
+                    
+                    # Parse scheduled_departure datetime
+                    scheduled_departure = (
+                        flight.get('scheduled_departure') or 
+                        flight.get('scheduledDeparture') or
+                        flight.get('departure_time')
+                    )
+                    departure_time = 'N/A'
+                    flight_time_calc = 'N/A'
+                    
+                    if scheduled_departure:
+                        try:
+                            # Handle both datetime and date strings
+                            if 'T' in str(scheduled_departure):
+                                dt = datetime.fromisoformat(str(scheduled_departure).replace('Z', '+00:00'))
+                            else:
+                                # If it's just a date, assume midnight
+                                dt = datetime.strptime(str(scheduled_departure), '%Y-%m-%d')
+                            departure_time = dt.strftime('%H:%M')
+                            
+                            # Calculate flight time if arrival time exists
+                            scheduled_arrival = (
+                                flight.get('scheduled_arrival') or 
+                                flight.get('scheduledArrival') or
+                                flight.get('arrival_time')
+                            )
+                            if scheduled_arrival:
+                                try:
+                                    if 'T' in str(scheduled_arrival):
+                                        arrival_dt = datetime.fromisoformat(str(scheduled_arrival).replace('Z', '+00:00'))
+                                    else:
+                                        arrival_dt = datetime.strptime(str(scheduled_arrival), '%Y-%m-%d')
+                                    duration = arrival_dt - dt
+                                    hours = duration.seconds // 3600
+                                    minutes = (duration.seconds % 3600) // 60
+                                    flight_time_calc = f'{hours}h {minutes}m'
+                                except Exception as e:
+                                    print(f"[WARNING] Error calculating flight time: {e}")
+                        except Exception as e:
+                            print(f"[WARNING] Error parsing departure time '{scheduled_departure}': {e}")
+                    
+                    # Try multiple possible field names for each value
+                    departure_city = (
+                        flight.get('departure_city') or 
+                        flight.get('departureCity') or
+                        flight.get('departure_airport') or
+                        flight.get('origin') or
+                        'N/A'
+                    )
+                    
+                    arrival_city = (
+                        flight.get('arrival_city') or 
+                        flight.get('arrivalCity') or
+                        flight.get('arrival_airport') or
+                        flight.get('destination') or
+                        'N/A'
+                    )
+                    
+                    flight_number = (
+                        flight.get('flight_number') or 
+                        flight.get('flightNumber') or
+                        flight.get('number') or
+                        'N/A'
+                    )
+                    
+                    formatted_flight = {
+                        'time': departure_time,
+                        'departure_city': departure_city,
+                        'destination_city': arrival_city,
+                        'flight_time': flight_time_calc,
+                        'status': flight_number
+                    }
+                    formatted_flights.append(formatted_flight)
+                    print(f"[DEBUG] Formatted flight #{idx}: {formatted_flight}")
+                
+                print(f"[DEBUG] Successfully formatted {len(formatted_flights)} flights")
+                # Return only upcoming flights (limit to 5 most recent)
+                return formatted_flights[:5]
+                
+            except ValueError as json_error:
+                print(f"[ERROR] Failed to parse JSON: {json_error}")
+                print(f"[ERROR] Response text (first 1000 chars): {response.text[:1000]}")
+                return []
+                
+        elif response.status_code == 401:
+            print(f"[ERROR] Unauthorized (401) - Token might be invalid or expired")
+            return []
+        elif response.status_code == 403:
+            print(f"[ERROR] Forbidden (403) - You don't have permission to access this endpoint")
+            return []
+        elif response.status_code == 404:
+            print(f"[ERROR] Not Found (404) - The endpoint /api/flights doesn't exist or returned no data")
+            print(f"[ERROR] Response: {response.text[:500]}")
+            return []
+        else:
+            print(f"[ERROR] Failed to fetch flights: HTTP {response.status_code}")
+            print(f"[ERROR] Response: {response.text[:500]}")
+            return []
+            
+    except requests.exceptions.Timeout:
+        print(f"[ERROR] Request timeout when fetching flights")
+        return []
+    except requests.exceptions.ConnectionError as e:
+        print(f"[ERROR] Connection error when fetching flights: {e}")
+        return []
+    except Exception as e:
+        print(f"[ERROR] Unexpected error fetching flights from API: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def get_destination_weather():
@@ -231,7 +385,6 @@ def get_destination_weather():
     Returns list of weather dictionaries
     """
     # Placeholder data - replace with actual API call
-    # Example structure of what the API should return:
     return [
         {'city': 'Cancún', 'temp': 28, 'condition': 'Soleado'},
         {'city': 'Guadalajara', 'temp': 24, 'condition': 'Parcialmente nublado'},
@@ -246,7 +399,6 @@ def get_destination_times():
     Returns list of time dictionaries
     """
     # Placeholder data - replace with actual API call
-    # Example structure of what the API should return:
     return [
         {'city': 'Cancún', 'time': '15:30', 'timezone': 'CST (UTC-6)'},
         {'city': 'Guadalajara', 'time': '14:30', 'timezone': 'CST (UTC-6)'},
