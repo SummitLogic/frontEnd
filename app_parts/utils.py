@@ -125,22 +125,26 @@ def restore_session_state():
     persisted session file if present. Safe to call repeatedly.
     """
     try:
-        # Only attempt if session not already populated
-        if not st.session_state.get('logged_in') or not st.session_state.get('user'):
-            sess = load_session()
-            if sess and isinstance(sess, dict):
-                user = sess.get('user')
-                token = sess.get('token')
-                if user:
+        sess = load_session()
+        if sess and isinstance(sess, dict):
+            user = sess.get('user')
+            token = sess.get('token')
+            
+            # Always restore if we have a valid session and missing data
+            if user:
+                # Only overwrite if not already set or if current is empty
+                if not st.session_state.get('user'):
                     st.session_state['user'] = user
-                    st.session_state['username'] = user.get('username') or user.get('email') or st.session_state.get('username')
-                    st.session_state['role'] = user.get('role') or st.session_state.get('role')
-                    if token:
-                        st.session_state['token'] = token
+                if not st.session_state.get('username'):
+                    st.session_state['username'] = user.get('username') or user.get('email')
+                if not st.session_state.get('role'):
+                    st.session_state['role'] = user.get('role')
+                if token and not st.session_state.get('token'):
+                    st.session_state['token'] = token
+                if not st.session_state.get('logged_in'):
                     st.session_state['logged_in'] = True
-    except Exception:
-        pass
-
+    except Exception as e:
+        print(f"Error restoring session: {e}")
 
 def navigate(page: str = None, sub: str = None, extra: dict = None):
     """Navigate within the app by setting query params and triggering a rerun.
