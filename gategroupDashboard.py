@@ -10,6 +10,7 @@ import hashlib
 import re
 from datetime import datetime
 import requests
+import time
 
 # Page configuration
 st.set_page_config(
@@ -19,6 +20,49 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize session state defaults to avoid KeyError when accessed later
+for _k, _v in {
+    'logged_in': False,
+    'username': '',
+    'role': '',
+    'token': None,
+}.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
+
+def safe_rerun():
+    """Attempt to rerun the Streamlit script in a way that's compatible across
+    Streamlit versions. Prefer `st.experimental_rerun()` when available. As a
+    fallback, toggle a query parameter and call `st.stop()` to trigger a reload.
+    """
+    try:
+        if hasattr(st, 'experimental_rerun') and callable(st.experimental_rerun):
+            st.experimental_rerun()
+            return
+    except Exception:
+        pass
+
+    # Fallback: toggle a timestamp query param to force a rerun
+    try:
+        if hasattr(st, 'experimental_get_query_params') and hasattr(st, 'experimental_set_query_params'):
+            params = st.experimental_get_query_params() or {}
+            params['_r'] = int(time.time())
+            st.experimental_set_query_params(**params)
+            # Stop execution so Streamlit will reload the script with new params
+            st.stop()
+            return
+    except Exception:
+        pass
+
+    # Last-resort: attempt to stop the script
+    try:
+        st.stop()
+    except Exception:
+        pass
+
+# Custom CSS: force pure black background and golden text across the app
+# Gold color: rgb(166,151,109)
 # Custom CSS: force pure black background and golden text across the app
 # Gold color: rgb(166,151,109)
 st.markdown("""
@@ -77,16 +121,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Login / Logo area
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'username' not in st.session_state:
-    st.session_state['username'] = ''
-
-# Temporary toggle to allow public access to FlightCrew Home without login
-PUBLIC_FLIGHTCREW_ACCESS = True
-
-# Determine if this request should render the standalone FlightCrew page
+# Determine if this request should render the standalone FlightCrew/GroundCrew page
 try:
     _params = st.query_params
 except Exception:
@@ -98,10 +133,15 @@ if _params:
         _page = v[0] if v else None
     else:
         _page = v
+# Support programmatic navigation set via session_state['goto_page'] as a fallback
+if not _page and st.session_state.get('goto_page'):
+    _page = st.session_state.pop('goto_page', None)
 IS_STANDALONE_FLIGHTCREW = (_page == 'flightcrew')
-
-
-
+IS_STANDALONE_GROUNDCREW = (_page == 'groundcrew')
+IS_STANDALONE = IS_STANDALONE_FLIGHTCREW or IS_STANDALONE_GROUNDCREW
+# Configuration toggles
+# When True, FlightCrew UI is publicly accessible without logging in
+PUBLIC_FLIGHTCREW_ACCESS = False
 # Logo display (centered). The app will use `assets/logo.png` or `assets/logo.jpg` if present.
 col_l, col_c, col_r = st.columns([1, 2, 1])
 with col_c:
@@ -256,6 +296,61 @@ if not st.session_state['logged_in']:
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             if st.button("Iniciar sesión", key='login_btn'):
+                # First try remote login using provided API (prefer email)
+                login_api = "https://summitlogicapidb-production.up.railway.app/api/auth/login"
+                did_remote = False
+                if login_id.strip() and login_pw.strip():
+                    try:
+                        payload = {"email": login_id.strip(), "password": login_pw.strip()}
+                        resp = requests.post(login_api, json=payload, timeout=8)
+                        did_remote = True
+                        if 200 <= resp.status_code < 300:
+                            try:
+                                data = resp.json()
+                            except Exception:
+                                data = {}
+
+                            # server expected to return token and user
+                            token = data.get('token') or data.get('accessToken') or None
+                            user = data.get('user') or data.get('data') or {}
+                            server_role = None
+                            if isinstance(user, dict):
+                                server_role = user.get('role')
+
+                            # Normalise role and choose target page
+                            target_page = 'groundcrew'
+                            if server_role:
+                                if 'flight' in server_role.lower():
+                                    target_page = 'flightcrew'
+                                else:
+                                    target_page = 'groundcrew'
+
+                            # persist into session_state
+                            st.session_state['logged_in'] = True
+                            st.session_state['username'] = user.get('username') or user.get('email') or login_id.strip()
+                            st.session_state['role'] = server_role or ''
+                            st.session_state['token'] = token
+                            st.success(f"Bienvenido, {st.session_state['username']}!")
+
+                            # set query param to open the appropriate standalone page
+                            try:
+                                st.experimental_set_query_params(page=target_page)
+                            except Exception:
+                                # fallback: set a session var that the top of the script will read
+                                st.session_state['goto_page'] = target_page
+
+                            safe_rerun()
+                        else:
+                            # remote auth failed; show server message and fall back to local
+                            try:
+                                msg = resp.json().get('message') or resp.text
+                            except Exception:
+                                msg = resp.text
+                            st.warning(f"Autenticación remota falló: {msg}")
+                    except Exception as e:
+                        st.info(f"No se pudo conectar con el servidor de autenticación: {e}. Intentando autenticación local...")
+
+                # If remote login was not attempted or failed, try local users file behavior
                 users = load_users()
                 if users:
                     found = None
@@ -271,7 +366,18 @@ if not st.session_state['logged_in']:
                             st.session_state['username'] = found.get('username')
                             st.session_state['role'] = found.get('role')
                             st.success(f"Bienvenido, {st.session_state['username']}!")
-                            st.experimental_rerun()
+                            # local users: choose page based on stored role
+                            if found.get('role') and 'flight' in found.get('role').lower():
+                                try:
+                                    st.experimental_set_query_params(page='flightcrew')
+                                except Exception:
+                                    st.session_state['goto_page'] = 'flightcrew'
+                            else:
+                                try:
+                                    st.experimental_set_query_params(page='groundcrew')
+                                except Exception:
+                                    st.session_state['goto_page'] = 'groundcrew'
+                            safe_rerun()
                         else:
                             st.error("Credenciales inválidas.")
                 else:
@@ -280,7 +386,7 @@ if not st.session_state['logged_in']:
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = login_id.strip()
                         st.success(f"Bienvenido, {st.session_state['username']}!")
-                        st.experimental_rerun()
+                        safe_rerun()
                     else:
                         st.error("Por favor ingresa usuario y contraseña.")
 
@@ -349,7 +455,7 @@ if not st.session_state['logged_in']:
                                                 save_users(users)
                                             except Exception:
                                                 pass
-                                            st.experimental_rerun()
+                                            safe_rerun()
                                         else:
                                             # try to extract message from server
                                             try:
@@ -374,7 +480,7 @@ if not st.session_state['logged_in']:
                                         st.session_state['logged_in'] = True
                                         st.session_state['username'] = new_user['username']
                                         st.session_state['role'] = new_user['role']
-                                        st.experimental_rerun()
+                                        safe_rerun()
 
     # stop further rendering until logged in (allow public FlightCrew if configured)
     if not st.session_state['logged_in'] and not PUBLIC_FLIGHTCREW_ACCESS:
@@ -390,7 +496,7 @@ with st.sidebar:
         if st.button("Cerrar sesión"):
             st.session_state['logged_in'] = False
             st.session_state['username'] = ''
-            st.experimental_rerun()
+            safe_rerun()
 
     st.image("https://via.placeholder.com/200x80/1f77b4/ffffff?text=SummitLogic", use_column_width=True)
     st.markdown("---")
@@ -421,3 +527,31 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("© 2024 SummitLogic. All rights reserved.")
+
+
+def main():
+    """Entry point for running this module as a script.
+
+    Preferred usage is via Streamlit:
+        streamlit run gategroupDashboard.py
+
+    If the module is executed directly with plain `python`, this function
+    will print a short instruction and exit. When executed by Streamlit the
+    app runs as normal (Streamlit imports and executes the module contents).
+    """
+    import sys
+
+    # If the process looks like Streamlit, do nothing (Streamlit already ran the script)
+    argv0 = sys.argv[0].lower() if sys.argv else ''
+    if 'streamlit' in argv0 or any('streamlit' in a.lower() for a in sys.argv):
+        return
+
+    print("This script is intended to be run with Streamlit.")
+    print("Run with:")
+    print("  streamlit run gategroupDashboard.py")
+    print("or from the project root:")
+    print("  streamlit run /Users/rigo/Desktop/frontEnd/gategroupDashboard.py")
+
+
+if __name__ == '__main__':
+    main()
